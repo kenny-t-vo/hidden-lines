@@ -19,6 +19,13 @@ What it does not do:
 
 ## Install
 
+From Rhino 8's Package Manager, on Mac or Windows:
+
+1. Type `PackageManager` in Rhino 8, search for **HiddenLines**, and click Install.
+2. Quit Rhino and open it again.
+
+Or from a file, from the [releases](https://github.com/kenny-t-vo/hidden-lines/releases):
+
 1. Get the package for your computer: `hiddenlines-VERSION-rh8_0-mac.yak` or `hiddenlines-VERSION-rh8_0-win.yak`.
 2. Install it:
    - **On a Mac,** double-click the file. Rhino 8 opens, if it is not open already, and installs the package without showing a window. Its command line says "Successfully installed HiddenLines". If the file opens another version of Rhino, install it as on Windows.
@@ -188,7 +195,7 @@ When the dialog opens, at most once a day, HL asks GitHub's releases API for its
 
 ## Update and uninstall
 
-To update, install the newer package the same way and restart Rhino. To uninstall, use `_PackageManager`, Installed, HiddenLines, Uninstall. Then delete the folder `.rhinocode/kit-hl` in your home folder (on Windows, `%USERPROFILE%\.rhinocode\kit-hl`). It holds HL's copy of its files, the Python and packages it downloaded (about 650 MB) and its logs.
+To update, click Update for HiddenLines in the Package Manager, or install the newer package the same way, and restart Rhino. To uninstall, use `_PackageManager`, Installed, HiddenLines, Uninstall. Then delete the folder `.rhinocode/kit-hl` in your home folder (on Windows, `%USERPROFILE%\.rhinocode\kit-hl`). It holds HL's copy of its files, the Python and packages it downloaded (about 650 MB) and its logs.
 
 ## How it works
 

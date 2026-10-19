@@ -1,0 +1,58 @@
+{
+ "id": "hidden",
+ "title": "hidden-lines test scene: hidden",
+ "scale": 100,
+ "out": ".",
+ "view": {
+  "direction": [
+   0,
+   1,
+   0
+  ],
+  "target": [
+   3,
+   3,
+   0
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "house",
+   "layers": [
+    "hl::hidden::house"
+   ],
+   "layer": "CUT"
+  },
+  {
+   "id": "footing",
+   "layers": [
+    "hl::hidden::footing"
+   ],
+   "layer": "DETAIL",
+   "hidden": true
+  },
+  {
+   "id": "earth",
+   "layers": [
+    "hl::hidden::earth"
+   ],
+   "layer": "CONTEXT"
+  }
+ ],
+ "clip": {
+  "origin": [
+   3,
+   3,
+   0
+  ],
+  "normal": [
+   0,
+   1,
+   0
+  ]
+ }
+}

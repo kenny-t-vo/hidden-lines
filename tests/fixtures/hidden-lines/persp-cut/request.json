@@ -1,0 +1,54 @@
+{
+ "id": "persp-cut",
+ "title": "hidden-lines test scene: persp-cut",
+ "scale": 200,
+ "out": ".",
+ "view": {
+  "lens_mm": 24,
+  "camera": [
+   -10,
+   -30,
+   40
+  ],
+  "target": [
+   12,
+   9,
+   0
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "block",
+   "layers": [
+    "hl::persp-cut::block",
+    "hl::persp-cut::wall"
+   ],
+   "layer": "CUT"
+  },
+  {
+   "id": "ground",
+   "layers": [
+    "hl::persp-cut::ground"
+   ],
+   "layer": "CONTEXT",
+   "ground": true,
+   "fill": "K6"
+  }
+ ],
+ "clip": {
+  "origin": [
+   0,
+   0,
+   1.5
+  ],
+  "normal": [
+   0,
+   0,
+   -1
+  ]
+ }
+}

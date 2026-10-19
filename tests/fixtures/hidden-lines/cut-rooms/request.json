@@ -1,0 +1,59 @@
+{
+ "id": "cut-rooms",
+ "title": "hidden-lines test scene: cut-rooms",
+ "scale": 200,
+ "out": ".",
+ "view": {
+  "direction": [
+   0,
+   1,
+   0
+  ],
+  "target": [
+   7,
+   3,
+   3
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "rooms",
+   "layers": [
+    "hl::cut-rooms::rooms"
+   ],
+   "layer": "CUT"
+  },
+  {
+   "id": "annex",
+   "layers": [
+    "hl::cut-rooms::annex"
+   ],
+   "layer": "DETAIL",
+   "profile_layer": "OUTLINE"
+  },
+  {
+   "id": "ground",
+   "layers": [
+    "hl::cut-rooms::ground"
+   ],
+   "layer": "CONTEXT",
+   "ground": true
+  }
+ ],
+ "clip": {
+  "origin": [
+   4,
+   3,
+   0
+  ],
+  "normal": [
+   0,
+   1,
+   0
+  ]
+ }
+}

@@ -1,0 +1,43 @@
+{
+ "id": "touching",
+ "title": "hidden-lines test scene: touching",
+ "scale": 200,
+ "out": ".",
+ "view": {
+  "bearing": 135.0,
+  "elevation": 35.264389682754654,
+  "target": [
+   6,
+   6,
+   2
+  ],
+  "true_along": [
+   1,
+   0,
+   0
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "homes",
+   "layers": [
+    "hl::touching::homes"
+   ],
+   "layer": "DETAIL",
+   "profile_layer": "OUTLINE"
+  },
+  {
+   "id": "ground",
+   "layers": [
+    "hl::touching::ground"
+   ],
+   "layer": "CONTEXT",
+   "ground": true,
+   "fill": "K6"
+  }
+ ]
+}

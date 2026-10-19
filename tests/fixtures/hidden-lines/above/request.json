@@ -1,0 +1,65 @@
+{
+ "id": "above",
+ "title": "hidden-lines test scene: above",
+ "scale": 100,
+ "out": ".",
+ "view": {
+  "direction": [
+   0,
+   0,
+   -1
+  ],
+  "up": [
+   0,
+   1,
+   0
+  ],
+  "target": [
+   3,
+   2,
+   1
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "walls",
+   "layers": [
+    "hl::above::walls"
+   ],
+   "layer": "CUT",
+   "union": true
+  },
+  {
+   "id": "roof",
+   "layers": [
+    "hl::above::roof"
+   ],
+   "layer": "DETAIL",
+   "above": true
+  },
+  {
+   "id": "ground",
+   "layers": [
+    "hl::above::ground"
+   ],
+   "layer": "CONTEXT",
+   "ground": true
+  }
+ ],
+ "clip": {
+  "origin": [
+   0,
+   0,
+   1.2
+  ],
+  "normal": [
+   0,
+   0,
+   -1
+  ]
+ }
+}

@@ -1,0 +1,43 @@
+{
+ "id": "open",
+ "title": "hidden-lines test scene: open",
+ "scale": 200,
+ "out": ".",
+ "view": {
+  "bearing": 135.0,
+  "elevation": 35.264389682754654,
+  "target": [
+   7,
+   3,
+   1.5
+  ],
+  "true_along": [
+   1,
+   0,
+   0
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "house",
+   "layers": [
+    "hl::open::house",
+    "hl::open::porch"
+   ],
+   "layer": "DETAIL",
+   "profile_layer": "OUTLINE"
+  },
+  {
+   "id": "ground",
+   "layers": [
+    "hl::open::ground"
+   ],
+   "layer": "CONTEXT",
+   "ground": true
+  }
+ ]
+}

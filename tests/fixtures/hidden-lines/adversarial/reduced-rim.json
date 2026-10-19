@@ -1,0 +1,180 @@
+{
+  "name": "doubles-reduced-rim",
+  "family": "doubles-C",
+  "parts": [
+    {
+      "layer": "adv::h",
+      "group": "h",
+      "curve": [
+        [
+          0.42367007646018956,
+          0.09813534865483603,
+          0.0018852657732636813
+        ],
+        [
+          -0.390262335429778,
+          0.7653668647301798,
+          0.008946799318394403
+        ],
+        [
+          -0.39774032092747885,
+          -0.6737797067844401,
+          -0.006284168563468657
+        ],
+        [
+          0.42367007646018956,
+          0.09813534865483603,
+          0.0018852657732636813
+        ]
+      ]
+    },
+    {
+      "layer": "adv::l",
+      "group": "l",
+      "curve": [
+        [
+          0.4277077777777777,
+          0.0,
+          0.0008466666666666667
+        ],
+        [
+          0.4271936048751356,
+          0.09813534865483603,
+          0.0020583656243631835
+        ],
+        [
+          -0.3935215771139151,
+          0.7653668647301798,
+          0.010296821427015691
+        ],
+        [
+          -0.40106187915743,
+          -0.6737797067844401,
+          -0.007472641101824545
+        ],
+        [
+          0.4277077777777777,
+          0.0,
+          0.0008466666666666667
+        ]
+      ]
+    }
+  ],
+  "reason": "Two simple disjoint closed source polylines; exact polygon buffer bounds place the entire lesser loop inside the 0.408464567 pt centre gap, so C must remove it whole. Coordinates are retained in this generator record.",
+  "checks": [
+    {
+      "kind": "clear",
+      "area": [
+        [
+          52.23681966475071,
+          30.049871278714622
+        ],
+        [
+          52.15928334941222,
+          29.867149334410442
+        ],
+        [
+          28.79562227777114,
+          29.63262157940976
+        ],
+        [
+          28.5175319039634,
+          30.287968865034465
+        ],
+        [
+          52.23681966475071,
+          30.049871278714622
+        ]
+      ],
+      "max_pt": 0.01,
+      "layers": [
+        "DETAIL"
+      ]
+    }
+  ],
+  "checkpoint": 7,
+  "frame": [
+    80,
+    60
+  ],
+  "groups": [
+    {
+      "id": "h",
+      "layers": [
+        "adv::h"
+      ],
+      "layer": "BEYOND",
+      "weights": {
+        "profiles": 0.15,
+        "bases": 0.15,
+        "overlaps": 0.15,
+        "steps": 0.15,
+        "seams": 0.15,
+        "creases": 0.15,
+        "lines": 0.15,
+        "cuts": 0.15
+      }
+    },
+    {
+      "id": "l",
+      "layers": [
+        "adv::l"
+      ],
+      "layer": "DETAIL",
+      "weights": {
+        "profiles": 0.1,
+        "bases": 0.1,
+        "overlaps": 0.1,
+        "steps": 0.1,
+        "seams": 0.1,
+        "creases": 0.1,
+        "lines": 0.1,
+        "cuts": 0.1
+      }
+    },
+    {
+      "id": "back",
+      "layers": [
+        "adv::back"
+      ],
+      "layer": "CONTEXT",
+      "weights": {
+        "profiles": 0.1,
+        "bases": 0.1,
+        "overlaps": 0.1,
+        "steps": 0.1,
+        "seams": 0.1,
+        "creases": 0.1,
+        "lines": 0.1,
+        "cuts": 0.1
+      }
+    }
+  ],
+  "view": {
+    "direction": [
+      0,
+      1,
+      0
+    ],
+    "target": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "scale": 100,
+  "perspective": false,
+  "depth": 1000,
+  "report_checks": [
+    {
+      "field": "model.off_pt",
+      "max": 0
+    },
+    {
+      "field": "model.unexplained_pt",
+      "max": 0
+    }
+  ],
+  "observations": [],
+  "minimal_kind": "rim"
+}

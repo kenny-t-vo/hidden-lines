@@ -1,0 +1,47 @@
+{
+ "id": "bad",
+ "title": "hidden-lines test scene: bad",
+ "scale": 300,
+ "out": ".",
+ "view": {
+  "bearing": 150,
+  "elevation": 30,
+  "target": [
+   24,
+   1,
+   1
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "bad",
+   "layers": [
+    "hl::bad::clash",
+    "hl::bad::creased",
+    "hl::bad::crossing",
+    "hl::bad::duplicates",
+    "hl::bad::nonmanifold",
+    "hl::bad::notched",
+    "hl::bad::roof",
+    "hl::bad::row",
+    "hl::bad::sheet",
+    "hl::bad::slab",
+    "hl::bad::warped"
+   ],
+   "layer": "DETAIL",
+   "profile_layer": "OUTLINE"
+  },
+  {
+   "id": "ground",
+   "layers": [
+    "hl::bad::ground"
+   ],
+   "layer": "CONTEXT",
+   "ground": true
+  }
+ ]
+}

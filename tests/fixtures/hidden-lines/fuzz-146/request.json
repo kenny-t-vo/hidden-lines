@@ -1,0 +1,54 @@
+{
+ "id": "fuzz-146",
+ "title": "hidden-lines fuzz 146",
+ "scale": 200,
+ "out": ".",
+ "view": {
+  "lens_mm": 50,
+  "camera": [
+   -36.296869415355204,
+   -24.832598173337022,
+   11.193882263354796
+  ],
+  "target": [
+   0,
+   0,
+   2
+  ],
+  "two_point": true
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "masses",
+   "layers": [
+    "hl::fuzz::masses"
+   ],
+   "layer": "CUT"
+  },
+  {
+   "id": "ground",
+   "layers": [
+    "hl::fuzz::ground"
+   ],
+   "layer": "CONTEXT",
+   "ground": true,
+   "fill": "K6"
+  }
+ ],
+ "clip": {
+  "origin": [
+   0,
+   0,
+   3.1842888363457895
+  ],
+  "normal": [
+   0,
+   0,
+   -1
+  ]
+ }
+}

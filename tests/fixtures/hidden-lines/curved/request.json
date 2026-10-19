@@ -1,0 +1,37 @@
+{
+ "id": "curved",
+ "title": "hidden-lines test scene: curved",
+ "scale": 200,
+ "out": ".",
+ "view": {
+  "bearing": 150,
+  "elevation": 30,
+  "target": [
+   15,
+   0,
+   1.2
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "forms",
+   "layers": [
+    "hl::curved::forms"
+   ],
+   "layer": "DETAIL",
+   "profile_layer": "OUTLINE"
+  },
+  {
+   "id": "ground",
+   "layers": [
+    "hl::curved::ground"
+   ],
+   "layer": "CONTEXT",
+   "ground": true
+  }
+ ]
+}

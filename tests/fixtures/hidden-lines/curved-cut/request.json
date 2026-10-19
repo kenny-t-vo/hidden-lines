@@ -1,0 +1,48 @@
+{
+ "id": "curved-cut",
+ "title": "hidden-lines test scene: curved-cut",
+ "scale": 200,
+ "out": ".",
+ "view": {
+  "bearing": 150,
+  "elevation": 30,
+  "target": [
+   15,
+   0,
+   1.2
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "forms",
+   "layers": [
+    "hl::curved-cut::forms"
+   ],
+   "layer": "CUT"
+  },
+  {
+   "id": "ground",
+   "layers": [
+    "hl::curved-cut::ground"
+   ],
+   "layer": "CONTEXT",
+   "ground": true
+  }
+ ],
+ "clip": {
+  "origin": [
+   0,
+   0,
+   0
+  ],
+  "normal": [
+   0,
+   1,
+   0
+  ]
+ }
+}

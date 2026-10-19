@@ -1,0 +1,48 @@
+{
+ "id": "twisted",
+ "title": "hidden-lines test scene: twisted",
+ "scale": 100,
+ "out": ".",
+ "view": {
+  "direction": [
+   0,
+   1,
+   0
+  ],
+  "target": [
+   3.6,
+   0.5,
+   3.4
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "roof",
+   "layers": [
+    "hl::twisted::roof"
+   ],
+   "layer": "DETAIL",
+   "profile_layer": "OUTLINE",
+   "body": "house"
+  },
+  {
+   "id": "frame",
+   "layers": [
+    "hl::twisted::frame"
+   ],
+   "layer": "DETAIL",
+   "body": "house"
+  },
+  {
+   "id": "tiles",
+   "layers": [
+    "hl::twisted::tiles"
+   ],
+   "layer": "TEXTURE"
+  }
+ ]
+}

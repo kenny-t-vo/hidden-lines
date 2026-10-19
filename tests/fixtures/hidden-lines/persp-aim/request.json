@@ -1,0 +1,46 @@
+{
+ "id": "persp-aim",
+ "title": "hidden-lines test scene: persp-aim",
+ "scale": 500,
+ "out": ".",
+ "view": {
+  "lens_mm": 28,
+  "bearing": 230,
+  "elevation": 25,
+  "target": [
+   14,
+   0,
+   3
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "buildings",
+   "layers": [
+    "hl::persp-aim::buildings"
+   ],
+   "layer": "DETAIL",
+   "profile_layer": "OUTLINE"
+  },
+  {
+   "id": "curbs",
+   "layers": [
+    "hl::persp-aim::curbs"
+   ],
+   "layer": "FLOOR"
+  },
+  {
+   "id": "ground",
+   "layers": [
+    "hl::persp-aim::ground"
+   ],
+   "layer": "CONTEXT",
+   "ground": true,
+   "fill": "K6"
+  }
+ ]
+}

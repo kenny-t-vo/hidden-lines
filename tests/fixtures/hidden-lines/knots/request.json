@@ -1,0 +1,34 @@
+{
+ "id": "knots",
+ "title": "hidden-lines test scene: knots",
+ "scale": 200,
+ "out": ".",
+ "view": {
+  "bearing": 135.0,
+  "elevation": 35.264389682754654,
+  "target": [
+   2.5,
+   0,
+   2
+  ],
+  "true_along": [
+   1,
+   0,
+   0
+  ]
+ },
+ "frame": {
+  "w_pt": 560,
+  "h_pt": 400
+ },
+ "groups": [
+  {
+   "id": "forms",
+   "layers": [
+    "hl::knots::sphere",
+    "hl::knots::revolved"
+   ],
+   "layer": "DETAIL"
+  }
+ ]
+}

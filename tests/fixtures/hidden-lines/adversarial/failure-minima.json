@@ -1,0 +1,408 @@
+[
+  {
+    "scene": "doubles-occluder-0.04-phase0-A",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0-A",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.04-phase0-B",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0-B",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.04-phase0-C",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0-C",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.04-phase0.0625-A",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0.0625-A",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.04-phase0.0625-B",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0.0625-B",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.04-phase0.0625-C",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0.0625-C",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.04-phase0.125-A",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0.125-A",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.04-phase0.125-B",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0.125-B",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.04-phase0.125-C",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0.125-C",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.04-phase0.1875-A",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0.1875-A",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.04-phase0.1875-B",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0.1875-B",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.04-phase0.1875-C",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.04-phase0.1875-C",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.03)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.12-phase0-C",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.12-phase0-C",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.1 pt inside (DETAIL 0.1) (measure 0.1)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.12-phase0.0625-C",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.12-phase0.0625-C",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.1 pt inside (DETAIL 0.1) (measure 0.1)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.12-phase0.1875-A",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.12-phase0.1875-A",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.01)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.12-phase0.1875-B",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.12-phase0.1875-B",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.0 pt inside (DETAIL 0.0) (measure 0.01)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.12-phase0.1875-C",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.12-phase0.1875-C",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.1 pt inside (DETAIL 0.1) (measure 0.1)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.24-phase0-A",
+    "fault": "wrong occlusion reason",
+    "witness": "doubles-occluder-0.24-phase0-A",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "unexpected dropped reasons: a thin face: only its heaviest line kept"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.24-phase0-B",
+    "fault": "wrong occlusion reason",
+    "witness": "doubles-occluder-0.24-phase0-B",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "unexpected dropped reasons: a thin face: only its heaviest line kept"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.24-phase0-C",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.24-phase0-C",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.2 pt inside (DETAIL 0.2) (measure 0.19)"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.24-phase0.0625-A",
+    "fault": "wrong occlusion reason",
+    "witness": "doubles-occluder-0.24-phase0.0625-A",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "unexpected dropped reasons: a thin face: only its heaviest line kept"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.24-phase0.0625-B",
+    "fault": "wrong occlusion reason",
+    "witness": "doubles-occluder-0.24-phase0.0625-B",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "unexpected dropped reasons: a thin face: only its heaviest line kept"
+    ]
+  },
+  {
+    "scene": "doubles-occluder-0.24-phase0.0625-C",
+    "fault": "sub-pixel visibility",
+    "witness": "doubles-occluder-0.24-phase0.0625-C",
+    "minimality": "one triangle and one rear segment; primitive-minimal",
+    "failures": [
+      "note 1 clear: 0.2 pt inside (DETAIL 0.2) (measure 0.19)"
+    ]
+  },
+  {
+    "scene": "doubles-stray-0.08-A",
+    "fault": "empty drawn-tree crash",
+    "witness": "doubles-min-last-stroke-A",
+    "minimality": "one segment; deleting it gives the accepted empty input control",
+    "failures": [
+      "ValueError: linestrings: Input operand 0 does not have enough dimensions (has 1, gufunc core with signature (i, d),()->() requires 2)"
+    ]
+  },
+  {
+    "scene": "doubles-stray-0.08-B",
+    "fault": "empty drawn-tree crash",
+    "witness": "doubles-min-last-stroke-B",
+    "minimality": "one segment; deleting it gives the accepted empty input control",
+    "failures": [
+      "ValueError: linestrings: Input operand 0 does not have enough dimensions (has 1, gufunc core with signature (i, d),()->() requires 2)"
+    ]
+  },
+  {
+    "scene": "doubles-stray-0.08-C",
+    "fault": "empty drawn-tree crash",
+    "witness": "doubles-min-last-stroke-C",
+    "minimality": "one segment; deleting it gives the accepted empty input control",
+    "failures": [
+      "ValueError: linestrings: Input operand 0 does not have enough dimensions (has 1, gufunc core with signature (i, d),()->() requires 2)"
+    ]
+  },
+  {
+    "scene": "doubles-stray-0.19-A",
+    "fault": "empty drawn-tree crash",
+    "witness": "doubles-min-last-stroke-A",
+    "minimality": "one segment; deleting it gives the accepted empty input control",
+    "failures": [
+      "ValueError: linestrings: Input operand 0 does not have enough dimensions (has 1, gufunc core with signature (i, d),()->() requires 2)"
+    ]
+  },
+  {
+    "scene": "doubles-stray-0.19-B",
+    "fault": "empty drawn-tree crash",
+    "witness": "doubles-min-last-stroke-B",
+    "minimality": "one segment; deleting it gives the accepted empty input control",
+    "failures": [
+      "ValueError: linestrings: Input operand 0 does not have enough dimensions (has 1, gufunc core with signature (i, d),()->() requires 2)"
+    ]
+  },
+  {
+    "scene": "doubles-stray-0.19-C",
+    "fault": "empty drawn-tree crash",
+    "witness": "doubles-min-last-stroke-C",
+    "minimality": "one segment; deleting it gives the accepted empty input control",
+    "failures": [
+      "ValueError: linestrings: Input operand 0 does not have enough dimensions (has 1, gufunc core with signature (i, d),()->() requires 2)"
+    ]
+  },
+  {
+    "scene": "doubles-run-endpoint-C",
+    "fault": "C bypassed by hair cleanup",
+    "witness": "doubles-min-hair-C",
+    "minimality": "two segments; deleting either is tested and passes",
+    "failures": [
+      "note 1 line: 0% covered (measure 0.0)"
+    ]
+  },
+  {
+    "scene": "doubles-run-excursion-C",
+    "fault": "C bypassed by hair cleanup",
+    "witness": "doubles-min-hair-C",
+    "minimality": "two segments; deleting either is tested and passes",
+    "failures": [
+      "note 1 line: 0% covered (measure 0.0)"
+    ]
+  },
+  {
+    "scene": "doubles-run-perspective-C",
+    "fault": "C bypassed by hair cleanup",
+    "witness": "doubles-min-hair-C",
+    "minimality": "two segments; deleting either is tested and passes",
+    "failures": [
+      "note 1 line: 0% covered (measure 0.0)"
+    ]
+  },
+  {
+    "scene": "doubles-rims-2-C",
+    "fault": "C close loop retained",
+    "witness": "doubles-reduced-rim-C",
+    "minimality": "three/four-vertex disjoint loops; deleting a whole loop passes; a further vertex deletion uncloses or intersects them",
+    "failures": [
+      "note 1 clear: 48.3 pt inside (DETAIL 48.3) (measure 48.33)"
+    ]
+  },
+  {
+    "scene": "doubles-rims-3-C",
+    "fault": "C close loop retained",
+    "witness": "doubles-reduced-rim-C",
+    "minimality": "three/four-vertex disjoint loops; deleting a whole loop passes; a further vertex deletion uncloses or intersects them",
+    "failures": [
+      "note 1 clear: 28.8 pt inside (DETAIL 28.8) (measure 28.75)",
+      "note 2 clear: 54.1 pt inside (DETAIL 54.1) (measure 54.06)"
+    ]
+  },
+  {
+    "scene": "doubles-converge-0.5-C",
+    "fault": "convergence removed",
+    "witness": "doubles-min-convergence-C",
+    "minimality": "two segments; deleting either is tested and passes; the responsible pass can differ with angle and length",
+    "failures": [
+      "note 1 line: 0% covered (measure 0.0)"
+    ]
+  },
+  {
+    "scene": "doubles-converge-1-C",
+    "fault": "convergence removed",
+    "witness": "doubles-min-convergence-C",
+    "minimality": "two segments; deleting either is tested and passes; the responsible pass can differ with angle and length",
+    "failures": [
+      "note 1 line: 0% covered (measure 0.0)"
+    ]
+  },
+  {
+    "scene": "doubles-converge-2-C",
+    "fault": "convergence removed",
+    "witness": "doubles-min-convergence-C",
+    "minimality": "two segments; deleting either is tested and passes; the responsible pass can differ with angle and length",
+    "failures": [
+      "note 1 line: 0% covered (measure 0.0)"
+    ]
+  },
+  {
+    "scene": "doubles-min-hair-C",
+    "fault": "C bypassed by hair cleanup",
+    "witness": "doubles-min-hair-C",
+    "minimality": "two segments; deleting either is tested and passes",
+    "failures": [
+      "note 1 line: 0% covered (measure 0.0)"
+    ]
+  },
+  {
+    "scene": "doubles-min-convergence-C",
+    "fault": "convergence removed",
+    "witness": "doubles-min-convergence-C",
+    "minimality": "two segments; deleting either is tested and passes; the responsible pass can differ with angle and length",
+    "failures": [
+      "note 1 line: 0% covered (measure 0.0)"
+    ]
+  },
+  {
+    "scene": "doubles-min-last-stroke-A",
+    "fault": "empty drawn-tree crash",
+    "witness": "doubles-min-last-stroke-A",
+    "minimality": "one segment; deleting it gives the accepted empty input control",
+    "failures": [
+      "ValueError: linestrings: Input operand 0 does not have enough dimensions (has 1, gufunc core with signature (i, d),()->() requires 2)"
+    ]
+  },
+  {
+    "scene": "doubles-min-last-stroke-B",
+    "fault": "empty drawn-tree crash",
+    "witness": "doubles-min-last-stroke-B",
+    "minimality": "one segment; deleting it gives the accepted empty input control",
+    "failures": [
+      "ValueError: linestrings: Input operand 0 does not have enough dimensions (has 1, gufunc core with signature (i, d),()->() requires 2)"
+    ]
+  },
+  {
+    "scene": "doubles-min-last-stroke-C",
+    "fault": "empty drawn-tree crash",
+    "witness": "doubles-min-last-stroke-C",
+    "minimality": "one segment; deleting it gives the accepted empty input control",
+    "failures": [
+      "ValueError: linestrings: Input operand 0 does not have enough dimensions (has 1, gufunc core with signature (i, d),()->() requires 2)"
+    ]
+  },
+  {
+    "scene": "doubles-min-loop-spike-C",
+    "fault": "C partial-gap loop removed",
+    "witness": "doubles-reduced-loop-C",
+    "minimality": "four/seven-vertex disjoint loops; seven admissible vertex deletions and both whole-loop deletions pass",
+    "failures": [
+      "note 1 line: 0% covered (measure 0.0)"
+    ]
+  },
+  {
+    "scene": "doubles-reduced-loop-C",
+    "fault": "C partial-gap loop removed",
+    "witness": "doubles-reduced-loop-C",
+    "minimality": "four/seven-vertex disjoint loops; seven admissible vertex deletions and both whole-loop deletions pass",
+    "failures": [
+      "note 1 line: 0% covered (measure 0.0)"
+    ]
+  },
+  {
+    "scene": "doubles-reduced-rim-C",
+    "fault": "C close loop retained",
+    "witness": "doubles-reduced-rim-C",
+    "minimality": "three/four-vertex disjoint loops; deleting a whole loop passes; a further vertex deletion uncloses or intersects them",
+    "failures": [
+      "note 1 clear: 47.1 pt inside (DETAIL 47.1) (measure 47.07)"
+    ]
+  }
+]

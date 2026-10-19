@@ -1,5 +1,7 @@
 # HL for Rhino 8
 
+<img src="rhino/plugin/icon/icon-512.png" alt="" width="96">
+
 HL draws the visible and hidden lines of a Rhino model, the way Make2D does.
 
 ![Rhino's Make2D and HL on the same view of a model's roofs](docs/images/make2d-vs-hl.png)

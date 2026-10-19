@@ -105,6 +105,8 @@ def main(argv):
         shutil.copytree(built, pkg, ignore=shutil.ignore_patterns('src', '*.yak'))
         man = (pkg / 'manifest.yml').read_text()
         man = man.replace('keywords:\n', 'keywords:\n' + ''.join(f'- {k}\n' for k in KEYWORDS), 1)
+        shutil.copy(KIT / 'rhino' / 'plugin' / 'icon' / 'icon-64.png', pkg / 'icon.png')   # the Package Manager's, 64 px
+        man += 'icon: icon.png\n'
         (pkg / 'manifest.yml').write_text(man)
         for name, path in uvs.items():
             if UV_NAMES[name] == plat:

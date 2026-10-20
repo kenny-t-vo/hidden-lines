@@ -690,6 +690,8 @@ def issue_url(version, rhino, system):
 
 
 AI_MAX_PT = 16383       # the widest artboard Illustrator takes, 5.78 m
+PRINT_SCALES = (5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000)    # the scales the refusal suggests
+A0_M = 1.189            # A0's long side, the largest sheet the suggested scale must fit
 
 
 def far_ones(centres):
@@ -703,17 +705,25 @@ def far_ones(centres):
     return [i for i, d in dist if d > max(10 * typical, 100.0)]
 
 
-def frame_problem(w_pt, h_pt, far=0):
+def frame_problem(w_pt, h_pt, far=0, scale=None):
     """a sentence when the drawing's sheet would be wider than Illustrator takes, with far, the objects lying far from
-    the rest, else None"""
+    the rest, else None; without far objects it says the scale only sizes the paper, and with the drawing's scale it
+    suggests the largest of PRINT_SCALES that fits A0"""
     if max(w_pt, h_pt) <= AI_MAX_PT:
         return None
     big = max(w_pt, h_pt) / 72.0 * 0.0254
     size = '%.0f km' % (big / 1000) if big >= 1000 else '%.0f m' % big
-    return ('The drawing would be %s across on paper, past the 5.8 m Illustrator takes. %s' % (size, (
-        '%d object%s far from the rest make%s it so, and %s selected: hide or move %s, or select what to draw.' % (
-            far, '' if far == 1 else 's', 's' if far == 1 else '', 'it is' if far == 1 else 'they are',
-            'it' if far == 1 else 'them')) if far else 'Check the scale, or select what to draw.'))
+    say = 'The drawing would be %s across on paper, past the 5.8 m Illustrator takes. ' % size
+    if far:
+        one = far == 1
+        return say + ('%d object%s far from the rest make%s it so, and %s selected: hide or move %s, or select what to '
+                      'draw.' % (far, '' if one else 's', 's' if one else '', 'it is' if one else 'they are',
+                                 'it' if one else 'them'))
+    fits = [s for s in PRINT_SCALES if scale and s > scale and big * scale / s <= A0_M]
+    such = ', such as 1:%d, where it would be %.1f m across' % (fits[0], big * scale / fits[0]) if fits else ''
+    return say + ('The scale sets only the line weights and the size on paper of the SVG and Illustrator files: the '
+                  'drawing HL adds to Rhino, and its DXF, are at the model\'s true size whatever the scale. Set the '
+                  'scale you print at%s, or select what to draw.' % such)
 
 
 WIN_MAX = 259           # the characters of a Windows path where long paths are not turned on

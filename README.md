@@ -62,13 +62,13 @@ On Windows, nothing needs unblocking either. A package downloaded in a browser l
    - an isometric;
    - a named view, as it was saved, with its own camera and lens; the clipping planes of the viewport you are in still cut it;
    - **Section** from one of the model's clipping planes, looking at the side it keeps.
-4. Set the **Scale**, for example 100 for 1:100, and a **Name**.
+4. Set the **Scale** you print at, for example 100 for 1:100, and a **Name**. The scale sets the line weights and the size on paper of the SVG and Illustrator files; the drawing HL adds to Rhino, and its DXF, are at the model's true size whatever the scale.
 5. Check the list of layers on the right. Each layer draws in a role. HL guesses the role from the layer's name, and the Why column says how it chose; change any that are wrong (see Layer roles below). When HL does not recognise some of the names, an orange line under the list says so: those layers draw as Building until you set their role.
 6. Check **Line weights** and the three boxes under it (see Line weights below). A grey line under each says what it does.
 7. To have the drawing as a file too, tick it under **Also save**: Illustrator (.ai), SVG or DXF, any or none. **Save files in** appears once one is ticked.
 8. Click **Draw**. The line above it says where the drawing goes.
 
-The drawing is added to the model under the layer `HL::NAME`, at the world origin. Nothing else is saved unless you tick it under Also save. The files you tick go beside your model in a folder named `<model> HL`, one folder a drawing, with the run's `hl.log`: `NAME.ai` for Illustrator, `NAME.svg` for a browser or Inkscape, `NAME.dxf` for AutoCAD. A model you have not saved yet has them saved in Documents, in a folder named HL. HL remembers the ticks, in the model and for your next model.
+The drawing is added to the model under the layer `HL::NAME`, at the model's true size, its lower left corner at the world origin. Nothing else is saved unless you tick it under Also save. The files you tick go beside your model in a folder named `<model> HL`, one folder a drawing, with the run's `hl.log`: `NAME.ai` for Illustrator, `NAME.svg` for a browser or Inkscape, `NAME.dxf` for AutoCAD. A model you have not saved yet has them saved in Documents, in a folder named HL. HL remembers the ticks, in the model and for your next model.
 
 HL never saves your model. What it adds is in the open model: the drawing on its layer `HL::NAME`, the roles you set on the layers, and the dialog's remembered choices. On Windows they reach your file when you save it. On a Mac, Rhino saves a model's changes into its file as you work (macOS Auto Save), so they reach the file without you saving, as a Make2D drawing does. To undo them:
 - **the drawing**: Undo straight after, or delete its layer `HL::NAME`. Drawing again with the same name replaces it.
@@ -178,7 +178,7 @@ Click a row to select those objects in Rhino. The window says what is wrong and 
 HL says what went wrong in its window instead of stopping Rhino, and keeps a log of every run: `hl.log` beside the files a drawing saves, or, for a drawing that saves none, `hl-DATE-TIME.log` in `.rhinocode/kit-hl/logs` in your home folder. The window's **Open the log** button opens it. To report a problem, attach the log.
 
 - **"HL is already drawing …"**: one drawing at a time in a Rhino, and one Rhino at a time drawing a name in a folder. Wait, or press Esc to stop the other.
-- **"The drawing would be … across on paper"**: an object far from the rest makes the sheet too big; HL selects it. Hide or move it, or select what to draw.
+- **"The drawing would be … across on paper"**: the sheet would be wider than the 5.8 m Illustrator takes. When an object far from the rest makes it so, HL selects it: hide or move it, or select what to draw. Otherwise the scale is too large for the model, 1:1 for a building, say: set the scale you print at, and HL suggests one that fits an A0 sheet. The drawing in Rhino and the DXF are at true size whatever the scale.
 - **"This drawing needs about … GB of memory"**: a drawing past most of the computer's memory can run very slowly or stop. Draw part of the model, or say Yes to try.
 - **"The Python and packages HL downloaded look damaged"**: say Yes and HL downloads them again.
 - **"The download stopped"**: the first run needs the internet; run HL again once you are online.

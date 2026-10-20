@@ -3023,10 +3023,14 @@ ok([hlc_.damaged(s_) for s_ in ("ModuleNotFoundError: No module named 'shapely'"
    'hl: the drawing step\'s output tells packages damaged or missing from other failures')
 hl_far_ = hlc_.far_ones([('wall', (0, 0, 0)), ('roof', (5, 3, 6)), ('tree', (13, 2, 2)), ('stair', (2, 1, 1)),
                          ('stray', (1e7, 0, 0))])
-hl_fr_ = [hlc_.frame_problem(*a_) for a_ in ((1863.35, 1354.7), (283464639.78, 299.62, 1), (20000, 300))]
+hl_fr_ = [hlc_.frame_problem(*a_) for a_ in ((1863.35, 1354.7), (283464639.78, 299.62, 1), (20000, 300),
+                                             (85039.4, 56692.9, 0, 1))]
 ok(hl_far_ == ['stray'] and hl_fr_[0] is None and '100 km' in hl_fr_[1] and '1 object far from the rest' in hl_fr_[1]
-   and 'Check the scale' in hl_fr_[2],
-   f'hl: a sheet wider than Illustrator takes is refused, naming the objects far from the rest that make it so: '
+   and 'true size' not in hl_fr_[1]
+   and "the model's true size whatever the scale" in hl_fr_[2] and 'Set the scale you print at, or' in hl_fr_[2]
+   and '30 m across' in hl_fr_[3] and 'such as 1:50, where it would be 0.6 m across' in hl_fr_[3],
+   f'hl: a sheet wider than Illustrator takes is refused, naming the objects far from the rest that make it so, or '
+   f'saying the drawing in Rhino and its DXF are at true size whatever the scale, with a print scale that fits A0: '
    f'{hl_far_}, {hl_fr_}')
 hl_long_ = [hlc_.long_path('C:\\Users\\a\\' + 'x' * n_, 'plan') for n_ in (200, 240)]
 ok(hl_long_[0] is None and '260' in hl_long_[1] and 'Save files in' in hl_long_[1],

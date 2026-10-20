@@ -2555,7 +2555,7 @@ def dialog(doc, vp):
             for i in far:
                 doc.Objects.Select(i, True)
             doc.Views.Redraw()
-            msg.Text = hl.frame_problem(fr['w_pt'], fr['h_pt'], len(far))
+            msg.Text = hl.frame_problem(fr['w_pt'], fr['h_pt'], len(far), st['built'].get('scale'))
             return
         if not (add.Checked or saves() or check.Checked):
             msg.Text = 'Tick Add the drawing to this model, or a file under Also save: as it is, Draw makes nothing.'

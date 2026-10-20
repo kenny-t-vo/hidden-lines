@@ -5,6 +5,7 @@ uv run --no-project --with numpy,shapely,numba python -B tests/fixtures/hidden-l
 
 Each export, request and checks file is built in a temporary directory. --keep retains
 that directory. --results records measurements; failures intentionally exit 1.
+--family perf runs the sequential size sweeps; see perf.py for --sizes and --first-run.
 """
 import argparse
 import json
@@ -143,6 +144,12 @@ def execute(s, folder, timeout=60, profile=False):
 
 
 def main():
+    selector = argparse.ArgumentParser(add_help=False)
+    selector.add_argument('--family', choices=['perf'])
+    family, _ = selector.parse_known_args()
+    if family.family == 'perf':
+        from perf import main as perf_main
+        return perf_main()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--only', help='regular expression matching scene names')
     parser.add_argument('--keep', action='store_true')

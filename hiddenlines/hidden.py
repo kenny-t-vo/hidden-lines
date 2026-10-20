@@ -3878,13 +3878,14 @@ def build(req_path, req=None, t=None):
                                                  for s_, n_ in zip(scene['segments'], seg_n) if n_])
     page_x, page_y = (seg_p[:, 0] * f + hx) * k, (2 * hy - (seg_p[:, 1] * f + hy)) * k
     box_o = {}
-    for o in np.unique(seg_o).tolist():
-        m_ = seg_o == o
+    point_order = np.argsort(seg_o, kind='stable')
+    point_objects, point_starts = np.unique(seg_o[point_order], return_index=True)
+    for o, m_ in zip(point_objects.tolist(), np.split(point_order, point_starts[1:])):
         box_o[o] = (page_x[m_].min(), page_y[m_].min(), page_x[m_].max(), page_y[m_].max())
         if o not in centre:
             c_ = seg_p[m_].mean(0)
             centre[o] = model_at(c_[0] * f + hx, c_[1] * f + hy, c_[2])
-    del seg_n, seg_o, seg_p, page_x, page_y
+    del seg_n, seg_o, seg_p, page_x, page_y, point_order, point_objects, point_starts
     faults = defaultdict(list)                         # object: [(kind, issue)]
     for i in report['issues']:
         i['kind'] = fault_kind(i['issue'])

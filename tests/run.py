@@ -1913,6 +1913,26 @@ ok(fx_gr_ and not [r_ for r_ in rep_gr_['suspects'] if r_['at_pt'] == fx_gr_[0][
    and any(i_['kind'] == 'open' for i_ in rep_gr_['issues'])
    and dup_ and 'a suspicion' in dup_[0]['why'],
    f'hidden-lines: the ground\'s open sheet makes no suspect, and a duplicate\'s row says it is a suspicion: {dup_[:1]}')
+# each object's points are grouped by a stable sort for its box and centre: two curve objects whose segments
+# interleave in the scene get the centres they get when each object's segments run together, and different ones
+def hl_centres_(order):
+    td_ = Path(tempfile.mkdtemp(prefix='hl-'))
+    for f_ in ('request.json', 'scene.json', 'meshes.bin'):
+        shutil.copy(FX / 'hidden-lines' / 'tjunction' / f_, td_ / f_)
+    s_ = json.loads((td_ / 'scene.json').read_text())
+    n_, o0_ = len(s_['objects']), s_['objects'][0]
+    s_['objects'] += [dict(i=n_ + j, ids=[f'curve-{j}'], group=o0_['group'], layer=o0_['layer'], kind='curve', solid=False,
+                           user={}, issues=['open curve'], parts=1) for j in (0, 1)]
+    runs = {0: [[[-20, 5, -1990], [-15, 5, -1990]], [[-15, 5, -1990], [-15, 9, -1990]]],
+            1: [[[10, -5, -1990], [16, -5, -1990]], [[16, -5, -1990], [16, -1, -1990], [12, -1, -1990]]]}
+    s_['segments'] += [dict(o=n_ + j, src='curve', sil='MiscellaneousFeature', pts=runs[j][k], sides='', scene=False,
+                            **{'pass': 'main'}) for j, k in order]
+    (td_ / 'scene.json').write_text(json.dumps(s_))
+    return {i_['object']: i_['model'] for i_ in hl_.build(td_ / 'request.json')[1]['issues'] if i_['object'] >= n_}
+ctr_run_, ctr_mix_ = hl_centres_([(0, 0), (0, 1), (1, 0), (1, 1)]), hl_centres_([(1, 0), (0, 0), (1, 1), (0, 1)])
+ok(len(ctr_run_) == 2 and ctr_run_ == ctr_mix_ and len({tuple(v_) for v_ in ctr_run_.values()}) == 2,
+   f'hidden-lines: two curve objects whose segments interleave get the centres they get with their segments together: '
+   f'{ctr_run_} {ctr_mix_}')
 
 # the notch signature : a line 0.5 pt beside a heavier one whose end turns 0.5 pt
 # onto it is a notch; one whose end turns 2 pt onto a line, a line meeting one square on and a line ending free beside

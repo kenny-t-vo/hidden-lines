@@ -2045,6 +2045,55 @@ def hl_widths_(svg, td, sides):
     res_ = hl_.check_notes(svg, [dict(kind='line', path=hl_side_(td, a, b), tol_pt=0.2) for a, b in sides])
     return [(round(m, 2), w.split('widths ')[-1] if 'widths' in w else '-') for _, _, m, w in res_]
 
+# an in-view mesh with no engine line in the frame, hidden behind it, off the frame or absent
+hl_empty_msg_ = ("Rhino's hidden-line engine returned no visible line in the frame, "
+                 "so HL drew from the meshes' faces instead.")
+hl_empty_g_ = [dict(id='box', layers=['hl::empty::*'], layer='DETAIL', profile_layer='OUTLINE')]
+hl_empty_v_ = dict(direction=(0, 1, 0), target=(0.5, 0.5, 0.5))
+for mode_ in ('hidden', 'off-frame', 'absent'):
+    td_ = Path(tempfile.mkdtemp(prefix='hl-')) / 'engine-empty'
+    sy_.write(td_, [dict(layer='hl::empty::box', group='box', tris=sy_.box(0, 0, 0, 1, 1, 1))],
+              hl_empty_v_, hl_empty_g_, request=dict(visibility='engine'))
+    sc_ = json.loads((td_ / 'scene.json').read_text())
+    for s_ in sc_['segments']:
+        if mode_ == 'hidden':
+            s_['vis'] = 'under'
+            s_['pts'] = [[x_, y_, -1001.0] for x_, y_, z_ in s_['pts']]
+        else:
+            s_['pts'] = [[x_ + 1000, y_, z_] for x_, y_, z_ in s_['pts']]
+    if mode_ == 'absent':
+        sc_['segments'] = []
+    (td_ / 'scene.json').write_text(json.dumps(sc_))
+    req_empty_ = (td_ / 'request.json').read_bytes()
+    with contextlib.redirect_stdout(io.StringIO()) as said_empty_:
+        hl_.main([str(td_ / 'request.json')])
+    rep_empty_ = json.loads((td_ / 'engine-empty-report.json').read_text())
+    rq_ = json.loads(req_empty_)
+    d_faces_, rep_faces_ = hl_.build(td_ / 'request.json', dict(rq_, visibility='faces'))
+    d_faces_.to_svg(td_ / 'faces.svg', canvas=(rq_['frame']['w_pt'], rq_['frame']['h_pt']), origin=(0.0, rq_['frame']['h_pt']))
+    ok(rep_empty_['counts']['edges'] > 0 and rep_empty_.get('visibility_fallback') == hl_empty_msg_
+       and said_empty_.getvalue().count(hl_empty_msg_) == 1 and (td_ / 'request.json').read_bytes() == req_empty_
+       and (td_ / 'engine-empty.svg').read_bytes() == (td_ / 'faces.svg').read_bytes()
+       and all((td_ / f'engine-empty{ext_}').is_file() for ext_ in ('.svg', '.dxf', '.ai'))
+       and 'visibility_fallback' not in rep_faces_,
+       f'hl: {mode_} engine segments fall back to mesh faces, with the same request and outputs and one notice')
+    shutil.rmtree(td_.parent)
+
+for mode_ in ('no-meshes', 'faces-empty', 'explicit-faces-empty'):
+    td_ = Path(tempfile.mkdtemp(prefix='hl-')) / 'empty-frame'
+    part_ = dict(layer='hl::empty::box', group='box', curve=[(100, 0, 0), (101, 0, 1)]) if mode_ == 'no-meshes' else \
+        dict(layer='hl::empty::box', group='box', tris=sy_.box(100, 0, 0, 101, 1, 1))
+    sy_.write(td_, [part_], hl_empty_v_, hl_empty_g_,
+              request=dict(visibility='faces' if mode_ == 'explicit-faces-empty' else 'engine'))
+    try:
+        hl_.build(td_ / 'request.json')
+        err_empty_ = None
+    except SystemExit as e_:
+        err_empty_ = str(e_)
+    ok(err_empty_ == 'hidden-lines: no visible line falls inside the frame',
+       f'hl: {mode_} keeps the empty-frame error')
+    shutil.rmtree(td_.parent)
+
 # a page where nothing hides, two curves on 600 x 400 pt, rasterizes no tile, and is drawn line for line as the same
 # page with a box that hides lying 5,700 pt off it, which rasterizes none either
 ras_ep_, svg_ep_ = [], []

@@ -183,6 +183,7 @@ HL says what went wrong in its window instead of stopping Rhino, and keeps a log
 
 - **"HL is already drawing …"**: one drawing at a time in a Rhino, and one Rhino at a time drawing a name in a folder. Wait, or press Esc to stop the other.
 - **"The drawing would be … across on paper"**: the sheet would be wider than the 5.8 m Illustrator takes, and an object far from the rest makes it so, or no standard scale fits A0. HL selects far objects: hide or move them, or select what to draw. Otherwise HL draws as at a working scale that fits A0 and says so, saving no Illustrator or SVG file. The drawing in Rhino and the DXF are at true size whatever the scale.
+- **Rhino's hidden-line engine returns no visible line in the frame**: HL tries drawing from the meshes' faces instead and says so in the log and drawing report. This has been seen in a model of non-manifold meshes. If there are no meshes, or the faces leave nothing in the frame either, HL stops with "no visible line falls inside the frame".
 - **"This drawing needs about … GB of memory"**: a drawing past most of the computer's memory can run very slowly or stop. Draw part of the model, or say Yes to try.
 - **"The Python and packages HL downloaded look damaged"**: say Yes and HL downloads them again.
 - **"The download stopped"**: the first run needs the internet; run HL again once you are online.

@@ -1562,6 +1562,11 @@ def build(req_path, req=None, t=None):
             pieces.append((A[0] + t0 * (B[0] - A[0]), A[1] + t0 * (B[1] - A[1]), zl(a[2], b[2], t0),
                         A[0] + t1 * (B[0] - A[0]), A[1] + t1 * (B[1] - A[1]), zl(a[2], b[2], t1), si))
     if not pieces:
+        if not by_faces and scene['meshes']['triangles']:
+            d, report = build(req_path, dict(req, visibility='faces'), t)
+            report['visibility_fallback'] = ("Rhino's hidden-line engine returned no visible line in the frame, "
+                                             "so HL drew from the meshes' faces instead.")
+            return d, report
         raise SystemExit('hidden-lines: no visible line falls inside the frame')
     PC = np.array(pieces)
     # the model's lines on paper (x0, y0, x1, y1): the graph's pieces and every line of the export besides, hidden and
@@ -4937,6 +4942,8 @@ def main(argv):
     place(json.dumps(report, indent=1, ensure_ascii=False) + '\n', folder / f'{name}-report.json')
     if rhino:
         place(json.dumps(for_rhino(d), ensure_ascii=False), rhino)
+    if report.get('visibility_fallback'):
+        print(report['visibility_fallback'])
     c = report['counts']
     print(f'{name}: {c["segments"]} segments, {c["edges"]} edges; ' +
           ', '.join(f'{k_} {v:.0f} pt' for k_, v in report['classes_pt'].items()))

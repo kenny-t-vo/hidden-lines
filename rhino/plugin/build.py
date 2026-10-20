@@ -23,10 +23,10 @@ UV_NAMES = {'uv-mac-arm64': 'mac', 'uv-mac-x64': 'mac', 'uv-win-x64.exe': 'win'}
 KEYWORDS = ['make2d', 'hidden-line', 'section', 'elevation', 'plan', 'axonometric', 'line-weight', 'architecture',
             'drawing', 'svg', 'dxf', 'illustrator']    # what people search the Package Manager for
 DESCRIPTION = ('HL draws the visible and hidden lines of a Rhino model, as Make2D does, with line weights set by what '
-               'each edge is, and adds the drawing to the model as layered curves. It also writes SVG, DXF and '
-               'Illustrator files. It aims to be a better Make2D, not a finished drawing: faulty geometry draws as '
-               'broken or doubled lines, which HL lists so you can fix the model, and some cleanup remains. The '
-               'first run downloads Python 3.12 and its packages, about 700 MB.')
+               'each edge is, and adds the drawing to the model as layered curves. Type HL to run it. It also writes '
+               'SVG, DXF and Illustrator files. It aims to be a better Make2D, not a finished drawing: faulty geometry '
+               'draws as broken or doubled lines, which HL lists so you can fix the model, and some cleanup remains. '
+               'The first run downloads Python 3.12 and its packages, about 700 MB.')
 BIN = Path('/Applications/Rhino 8.app/Contents/Resources/bin')
 
 

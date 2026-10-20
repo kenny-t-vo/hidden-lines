@@ -2,7 +2,7 @@
 
 <img src="rhino/plugin/icon/icon-512.png" alt="" width="96">
 
-HL draws the visible and hidden lines of a Rhino model, the way Make2D does.
+HL is a command for Rhino 8 that draws the visible and hidden lines of a model, the way Make2D does. Install the HiddenLines package, then type `HL`.
 
 ![Rhino's Make2D and HL on the same view of a model's roofs](docs/images/make2d-vs-hl.png)
 
@@ -12,7 +12,7 @@ It aims to be a better Make2D, not a finished drawing. It can only draw what the
 
 The line weights follow from what each edge is: a building's outline, a step, a crease, a line on the ground. A section's cut is drawn as closed outlines, ready to hatch. HL adds the drawing to the model as curves on layers, and writes it as SVG, DXF and Illustrator files.
 
-It runs on Rhino 8 for Mac (Apple silicon and Intel) and Windows.
+It runs on Rhino 8 for Mac and Windows. The Mac package is built for Apple silicon and Intel, though Intel Macs have not been tested.
 
 What it does not do:
 - draw text, dimensions or hatches;
@@ -34,7 +34,7 @@ Or from a file, from the [releases](https://github.com/kenny-t-vo/hidden-lines/r
    - **On Windows,** Explorer does not know the file, so install it from Rhino 8: type `-PackageManager`, choose Install, then Browse, and pick the file.
 3. Quit Rhino and open it again.
 
-The first time you type `HL`, it asks to download Python 3.12 and the packages the drawing runs on, about 700 MB. Click Yes. The download takes a minute or two and happens once. HL needs nothing else installed.
+Then type `HL` in Rhino's command line: `HL` is the command, and HiddenLines only the package's name. The first time, it asks to download Python 3.12 and the packages the drawing runs on, about 700 MB. Click Yes. The download takes a minute or two and happens once. HL needs nothing else installed.
 
 ![HL asking to download what it runs on](docs/images/first-run-box.png)
 

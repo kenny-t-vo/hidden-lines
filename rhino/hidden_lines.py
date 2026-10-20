@@ -2148,6 +2148,11 @@ def dialog(doc, vp):
     def on_tree(*_):
         tree_say.Text = hl.LAYER_TREES_SAY[tree_keys[layer_tree.SelectedIndex]]
     layer_tree.SelectedIndexChanged += on_tree
+    colours = forms.CheckBox()
+    colours.Text = 'Colours from the model'
+    colours.Checked = bool(last.get('colours', settings().get('colours', False)))
+    colours_say = label("Each line takes the colour of the object it came from, as Rhino shows it; the print widths "
+                        "stay HL's.", True, hint=True)
     depth = forms.CheckBox()
     depth.Text = 'Lighter with distance'
     depth.Checked = last.get('depth', True)
@@ -2755,6 +2760,8 @@ def dialog(doc, vp):
     top.AddRow(label(''), hidden_say)
     top.AddRow(label('Layers in the model'), layer_tree)
     top.AddRow(label(''), tree_say)
+    top.AddRow(label(''), colours)
+    top.AddRow(label(''), colours_say)
     top.AddRow(label(''), add)
     sb = forms.DynamicLayout()
     sb.Spacing = drawing.Size(14, 0)
@@ -2823,20 +2830,20 @@ def dialog(doc, vp):
         o = dict(request=st['path'], view=k, names=names, scale=float(scale.Value), add=bool(add.Checked),
                  cut=cut.Items[cut.SelectedIndex].Text if cut.SelectedIndex >= 0 else None,
                  weights=wkeys[weights.SelectedIndex], parent=parent.Text.strip(), out=outs, subs=bool(subs.Checked),
-                 layer_tree=tree_keys[layer_tree.SelectedIndex],
+                 layer_tree=tree_keys[layer_tree.SelectedIndex], colours=bool(colours.Checked),
                  depth=last.get('depth', True) if st['path'] else bool(depth.Checked),
                  merge=last.get('merge', False) if st['path'] else bool(merge.Checked),
                  hidden=last.get('hidden', False) if st['path'] else bool(hidden.Checked),
                  save=[k for k, b_ in save_boxes if b_.Checked])
         doc.Strings.SetString(SECTION, 'last', json.dumps(o))
-        save_settings(weights=o['weights'], save=o['save'], layer_tree=o['layer_tree'])
+        save_settings(weights=o['weights'], save=o['save'], layer_tree=o['layer_tree'], colours=o['colours'])
         folder = folder_of(nm)
         if not st['path']:
             store_roles(doc, hl, st['chosen'])
         return dict(req=req, folder=folder, name=nm, add=bool(add.Checked), check=bool(check.Checked),
                     label=st['views'][view.SelectedIndex][1], parent=parent.Text.strip() or OUT_LAYER,
                     save=saves(), keep_all=bool(st['path']) and not st['oversize'], oversize=st['oversize'],
-                    layer_tree=o['layer_tree'],
+                    layer_tree=o['layer_tree'], colours=o['colours'],
                     tokens_from=st['path'] or out_box.Text.strip() or out_default,
                     notice=None if st['path'] else st.get('notice'))
 
@@ -2845,7 +2852,7 @@ def dialog(doc, vp):
                                         grid=grid, add=add, check=check, size=size, cut_text=cut_text, msg=msg,
                                         subs=subs, weights=weights, parent=parent, out_box=out_box, count=count_text,
                                         depth=depth, merge=merge, dest=dest, weights_say=weights_say, unknown=unknown,
-                                        layer_tree=layer_tree, tree_say=tree_say,
+                                        layer_tree=layer_tree, tree_say=tree_say, colours=colours, colours_say=colours_say,
                                         updates=updates, forget=forget, on_forget=on_forget, hidden=hidden,
                                         save_boxes=save_boxes, save_label=save_label, show_save=show_save,
                                         on_edit=on_edit, on_draw=on_draw, load=load, refresh=refresh, finish=finish)
@@ -2903,11 +2910,12 @@ def layer_path(doc, path):
     return i
 
 
-def bring_in(doc, name, path, parent=OUT_LAYER, layer_tree='role'):
+def bring_in(doc, name, path, parent=OUT_LAYER, layer_tree='role', colours=False):
     """the drawing kit.py wrote for Rhino (hiddenlines/hidden.py, for_rhino) added under parent::name (a layer path, HL
     unless given), the name's layer marked with DRAWING_KEY so HL never draws it. role keeps the kit layers; model
     nests source layers and classes with object print attributes. Every curve keeps its source in user text, on the
     world's XY plane with the frame's lower left corner at the origin, replacing the previous run; one undo.
+    With colours, curves take their first source object's display and print colours; fills keep their ink.
     (curves, fills)"""
     import System
     data = json.load(open(path, encoding='utf-8'))
@@ -2930,6 +2938,7 @@ def bring_in(doc, name, path, parent=OUT_LAYER, layer_tree='role'):
         tol = doc.ModelAbsoluteTolerance
         hl = hl_module()
         linetypes = {}
+        source_colours = {}
 
         def linetype(dash, lengths):
             if not dash:
@@ -2969,6 +2978,22 @@ def bring_in(doc, name, path, parent=OUT_LAYER, layer_tree='role'):
                     a.ObjectColor = color(attrs['ink'])
                     a.PlotColorSource = Rhino.DocObjects.ObjectPlotColorSource.PlotColorFromObject
                     a.PlotColor = color(attrs['ink'])
+                if colours:
+                    source_id = attrs['user_text'].get('hl.object', '').split(',')[0].strip()
+                    if source_id:
+                        if source_id not in source_colours:
+                            source = doc.Objects.FindId(System.Guid(source_id))
+                            source_colours[source_id] = None
+                            if source is not None:
+                                display = source.Attributes.DrawColor(doc)
+                                computed = getattr(source.Attributes, 'ComputedPlotColor', None)
+                                source_colours[source_id] = (display, computed(doc) if computed else display)
+                        inks = source_colours[source_id]
+                        if inks is not None:
+                            a.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+                            a.ObjectColor = inks[0]
+                            a.PlotColorSource = Rhino.DocObjects.ObjectPlotColorSource.PlotColorFromObject
+                            a.PlotColor = inks[1]
                 pl = G.Polyline()
                 for x, y in ln['pts']:
                     pl.Add(x, y, 0.0)
@@ -3336,7 +3361,7 @@ def drawn(doc, o, folder):
         lint = hl.lint_rows(lines, k, req['frame']['h_pt'])
         added = ''
         if o['add']:
-            nc, nf = bring_in(doc, nm, tmp, o['parent'], o['layer_tree'])
+            nc, nf = bring_in(doc, nm, tmp, o['parent'], o['layer_tree'], colours=o.get('colours', False))
             os.remove(tmp)
             added = '%d curves and %d fills on %s::%s. ' % (nc, nf, o['parent'], nm)
             say('HL: ' + added)

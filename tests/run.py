@@ -3525,6 +3525,135 @@ src_stale_ = hlc_.stale_layers({'HL::p::DETAIL': 0, 'HL::p::DETAIL::building pro
 ok(set(src_stale_) == {'HL::p::DETAIL', 'HL::p::DETAIL::building profiles'}
    and src_stale_[0].endswith('building profiles'),
    'hl: switching layer trees removes the old empty tree deepest first and preserves the live model tree and other drawings')
+
+
+def bring_in_colour_tests():
+    import copy
+    import uuid
+    from unittest.mock import Mock, patch
+
+    ns = types.SimpleNamespace
+    script = load_hidden_lines()
+    red, blue, green, ink = (200, 30, 30), (30, 30, 200), (30, 200, 30), (128, 128, 128)
+    ids = [str(uuid.UUID(int=i)) for i in range(1, 6)]
+    data = dict(scale=100, objects=[dict(ids=[ids[0], ids[4]], layer='Model::Red'),
+                                    dict(ids=[ids[1], ids[0]], layer='Model::Missing'),
+                                    dict(ids=[], layer='Model::Unowned'),
+                                    dict(ids=[ids[2]], layer='Model::Print'),
+                                    dict(ids=[ids[3]], layer='Model::Fallback')],
+                layers=[dict(id='DETAIL', ink='#808080', print=True, dash='hidden', dash_model=[0.1, 0.05],
+                             subs=[dict(name='building ' + kind, kind=kind, weight_mm=width,
+                                        lines=[dict(pts=[[0, i], [1, i]], closed=False, source=i) for i in range(5)],
+                                        fills=[dict(rings=[[[0, 0], [1, 0], [1, 1]]], ink='#808080')])
+                                   for kind, width in [('profiles', 0.3), ('creases', 0.1)]])])
+    path = src_td_ / 'colours.json'
+    path.write_text(json.dumps(data))
+
+    class Attributes:
+        def __init__(self):
+            self.ColorSource = self.PlotColorSource = self.PlotWeightSource = self.LinetypeSource = 'layer'
+            self.ObjectColor = self.PlotColor = None
+            self.PlotWeight, self.LinetypeIndex = 0, -1
+            self.user_text = {}
+
+        def Duplicate(self):
+            return copy.deepcopy(self)
+
+        def SetUserString(self, key, value):
+            self.user_text[key] = value
+
+    class RhinoList(list):
+        def Add(self, *value):
+            self.append(value[0] if len(value) == 1 else value)
+
+    class Layers(list):
+        CurrentLayerIndex = -1
+
+    script.Rhino.DocObjects = ns(ObjectAttributes=Attributes,
+                                ObjectColorSource=ns(ColorFromObject='object'),
+                                ObjectPlotColorSource=ns(PlotColorFromObject='object'),
+                                ObjectPlotWeightSource=ns(PlotWeightFromObject='object'),
+                                ObjectLinetypeSource=ns(LinetypeFromObject='object'))
+    script.Rhino.UI = ns(PanelIds=ns(Layers='layers'), Panels=ns(IsPanelVisible=lambda *a: False))
+    script.G.Polyline = RhinoList
+    script.G.PolylineCurve = lambda p: p
+    script.G.Curve = object
+    script.G.Hatch = ns(Create=lambda *a: [object()])
+    script.color = lambda value: tuple(bytes.fromhex(value[1:]))
+    script.layer_path = lambda *a: None
+
+    def layer_at(doc, name, parent, *style):
+        full = doc.Layers[parent].FullPath + '::' + name if parent is not None else 'HL::' + name
+        for layer in doc.Layers:
+            if layer.FullPath == full:
+                return layer.Index
+        index = len(doc.Layers)
+        doc.Layers.append(ns(FullPath=full, Index=index, SortIndex=index, IsDeleted=False, SetUserString=Mock()))
+        return index
+
+    script.layer_at = layer_at
+
+    def tree(data, mode, order):
+        leaves = hlc_.layer_tree(data, mode, order)
+        for leaf in leaves:
+            for line in leaf['lines']:
+                if not line['attributes']['user_text']['hl.object']:
+                    line['attributes']['user_text'].pop('hl.object')
+        return leaves
+
+    script.hl_module = lambda: ns(layer_tree=tree, stale_layers=hlc_.stale_layers)
+    system = ns(Guid=uuid.UUID, Collections=ns(Generic=ns(List=RhinoList)))
+    for mode in ('role', 'model'):
+        records = []
+        for enabled in (None, False, True):
+            curves, fills = [], []
+            sources = {uuid.UUID(ids[0]): ns(Attributes=ns(DrawColor=Mock(return_value=red),
+                                                         ComputedPlotColor=Mock(return_value=red))),
+                       uuid.UUID(ids[2]): ns(Attributes=ns(DrawColor=Mock(return_value=red),
+                                                         ComputedPlotColor=Mock(return_value=blue))),
+                       uuid.UUID(ids[3]): ns(Attributes=ns(DrawColor=Mock(return_value=green)))}
+            objects = ns(FindId=Mock(side_effect=sources.get),
+                         FindByLayer=lambda layer: [a for a in curves + fills if a.LayerIndex == layer.Index],
+                         AddCurve=lambda curve, a: curves.append(a), AddHatch=lambda hatch, a: fills.append(a))
+            doc = ns(Layers=Layers(), Objects=objects, HatchPatterns=ns(FindName=lambda name: ns(Index=0)),
+                     Linetypes=ns(FindName=lambda name: ns(Index=7)), ModelAbsoluteTolerance=0.001,
+                     BeginUndoRecord=Mock(return_value=1), EndUndoRecord=Mock(), Views=ns(Redraw=Mock()))
+            with patch.dict(sys.modules, System=system):
+                counts = script.bring_in(doc, 'drawing', str(path), layer_tree=mode,
+                                         **({} if enabled is None else dict(colours=enabled)))
+            by_source = collections.defaultdict(list)
+            for a in curves:
+                by_source[a.user_text.get('hl.object', '')].append(a)
+            records.append((curves, fills))
+            if enabled:
+                ok(all(a.ObjectColor == a.PlotColor == red and a.ColorSource == a.PlotColorSource == 'object'
+                       for a in by_source[', '.join([ids[0], ids[4]])]),
+                   f'hl: model colours use the first joined source display and print colour in the {mode} tree')
+                ok(all((a.ObjectColor, a.PlotColor) == (red, blue) for a in by_source[ids[2]])
+                   and all(a.ObjectColor == a.PlotColor == green for a in by_source[ids[3]]),
+                   f'hl: computed print colour is used when available, else display colour, in the {mode} tree')
+                ok(all(a.ObjectColor == a.PlotColor == (ink if mode == 'model' else None)
+                       and a.ColorSource == a.PlotColorSource == ('object' if mode == 'model' else 'layer')
+                       for key in (', '.join([ids[1], ids[0]]), '') for a in by_source[key]),
+                   f'hl: missing first sources and absent hl.object keep their ink in the {mode} tree')
+                ok(collections.Counter(call.args[0] for call in objects.FindId.call_args_list)
+                   == collections.Counter(uuid.UUID(i) for i in ids[:4])
+                   and all(source.Attributes.DrawColor.call_count == 1 for source in sources.values()),
+                   f'hl: each source including a missing one is looked up once across curves in the {mode} tree')
+            else:
+                ok(not objects.FindId.called and all(a.ObjectColor == a.PlotColor == (ink if mode == 'model' else None)
+                                                    for a in curves),
+                   f'hl: colours {enabled} leaves curve inks unchanged without looking up sources in the {mode} tree')
+            ok(counts == (10, 2) and all(a.ObjectColor == a.PlotColor == ink for a in fills),
+               f'hl: colours {enabled} keeps fills in their ink in the {mode} tree')
+        off, on = records[1][0], records[2][0]
+        ok(all({k: v for k, v in vars(a).items() if k not in ('ColorSource', 'ObjectColor', 'PlotColorSource', 'PlotColor')}
+               == {k: v for k, v in vars(b).items() if k not in ('ColorSource', 'ObjectColor', 'PlotColorSource', 'PlotColor')}
+               for a, b in zip(off, on)),
+           f'hl: model colours leave widths, linetypes, layers and source text unchanged in the {mode} tree')
+
+
+bring_in_colour_tests()
 shutil.rmtree(src_td_)
 
 

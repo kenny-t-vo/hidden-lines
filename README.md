@@ -149,7 +149,9 @@ Choose **As in my model** under **Layers in the model** to nest the source layer
 
 In either tree, every curve carries user text **hl.layer**, its source layer's full path, and **hl.object**, its source object's id. Use Rhino's `SelUserText` to select all the lines from Chairs, for example. If the export joined several model objects into one, hl.object lists all their ids, separated by commas. Paths spanning more than one source object are split only when added to Rhino; the saved SVG, DXF and Illustrator paths stay as they were.
 
-The layers' colours are the inks they print in: black, and greys for texture and context. Everything is on when a drawing comes in. Drawing again with the same name replaces the drawing and removes the layers it no longer uses.
+Tick **Colours from the model**, below **Layers in the model**, to give each curve added to Rhino its source object's display and print colours, in either layer tree. It is off by default and remembered in the model and for the next model. Print widths, linetypes, layers and fills stay as they are, as do the saved SVG, DXF and Illustrator files. Where an export joined objects, the first object's colours are used; a missing source keeps HL's ink.
+
+The layers' colours are HL's inks: black, and greys for texture and context. Everything is on when a drawing comes in. Drawing again with the same name replaces the drawing and removes the layers it no longer uses.
 
 ![The Layers panel: a section by role with one class's distances open, and an isometric as in the model](docs/images/layers-panel.png)
 

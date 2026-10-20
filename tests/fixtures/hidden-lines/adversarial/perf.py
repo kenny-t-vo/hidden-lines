@@ -12,6 +12,8 @@ Sizes are counts except frame/frame_min/frame_fill (page width in pt), camera (d
 and curve (points). curve_objects adds one backdrop object to its curves. weld stacks
 triangles 1 nm apart; frame_min has one curve and no triangles; frame_fill's two triangles
 fill the frame, a curve across them.
+The peak, footprint_bytes, is macOS's physical footprint; elsewhere the peak resident set of
+the worker, which a parent running it alone reads from getrusage.
 """
 import argparse
 import ctypes
@@ -319,6 +321,8 @@ def draw(folder, cache, timeout, profile=False):
     argv += ['--deadline', str(max(0.1, timeout - 5))]
     if profile:
         argv.append('--profile')
+    if sys.platform != 'darwin':                   # no proc_pid_rusage: a parent of the worker alone reports its peak
+        argv = [sys.executable, '-B', str(HERE / 'perf.py'), '--peak'] + argv
     start = time.monotonic()
     load = os.getloadavg()
     cpu_start = system_cpu()
@@ -338,8 +342,8 @@ def draw(folder, cache, timeout, profile=False):
     for line in out.splitlines():
         if line.startswith('PERF_RESULT '):
             result.update(json.loads(line[12:]))
-    if 'footprint_bytes' not in result and result['status'] != 'SKIP':   # off macOS: the largest child's peak so far
-        result['footprint_bytes'] = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss * 1024
+        elif line.startswith('PERF_PEAK '):
+            result['footprint_bytes'] = int(line[10:])
     cpu_end = system_cpu()
     if cpu_start is not None and cpu_end is not None:
         delta = [(b - a) % 2**32 for a, b in zip(cpu_start, cpu_end)]
@@ -433,5 +437,9 @@ if __name__ == '__main__':
     if sys.argv[1:2] == ['--worker']:
         worker(Path(sys.argv[2]), '--profile' in sys.argv,
                float(sys.argv[sys.argv.index('--deadline') + 1]) if '--deadline' in sys.argv else 585)
+    elif sys.argv[1:2] == ['--peak']:
+        rc = subprocess.run(sys.argv[2:]).returncode
+        print(f'PERF_PEAK {resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss * 1024}', flush=True)   # KB
+        sys.exit(rc)
     else:
         sys.exit(main())

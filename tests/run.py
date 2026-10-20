@@ -1239,6 +1239,101 @@ ok(all(er_.contains(HPoint_(x, y)) for x, y in ((5, -0.5), (5, -3), (3, 0.2), (1
    'hidden-lines: the earth runs on under a ground slab\'s bottom face and fills a mound on it, and a pit with no line '
    'over it stays open')
 
+# snap rounding run by run (snap_round): lone lines, some under a grid step, crossing and touching clusters, closed
+# rings, lines ending short of others, and a line's copies in a run, scattered and reversed, in one shuffled order,
+# give union_all's parts, the same values in the same order, at grids either side of 1 (GEOS rounds the two by scale
+# and by grid size); and so with union_all joining its edges as GEOS 3.15 does, through nodes of two edges from each
+# node in turn, then the rings left
+import shapely as hl_sh_
+def hl_segs_(rng, g):
+    out_ = []
+    for c_ in range(16):
+        x_, y_ = rng.uniform(0, 4000, 2)
+        if c_ % 4 == 0:
+            out_ += [np.r_[p_, p_ + rng.normal(0, 25, 2)] for p_ in rng.normal(0, 20, (6, 2)) + (x_, y_)]
+        elif c_ % 4 == 1:
+            v_ = rng.uniform(0, 12, (3, 2)) + (x_, y_)
+            out_ += [np.r_[v_[i_], v_[(i_ + 1) % 3]] for i_ in range(3)]
+        else:
+            out_.append(np.r_[x_, y_, x_ + rng.normal(0, (0.3, 30)[c_ % 4 - 2]), y_ + rng.normal(0, 3)])
+        if c_ % 4 == 3:                                # a line ending 0.2 to 1.2 grid steps short of another
+            out_ += [np.r_[x_ + 50, y_, x_ + 90, y_],
+                     np.r_[x_ + rng.uniform(55, 85), y_ + rng.uniform(0.2, 1.2), x_ + 70, y_ + 30]]
+    P_ = np.array(out_)[rng.permutation(len(out_))]
+    P_ = np.insert(P_, 3, np.tile(P_[0], (4, 1)), axis=0)
+    for i_ in (5, 9, 20):
+        P_ = np.insert(P_, i_, P_[1, [2, 3, 0, 1]] if i_ == 9 else P_[1], axis=0)
+    return P_ * g
+def hl_parts_(lines, g):
+    return hl_sh_.get_coordinates(hl_sh_.get_parts(hl_sh_.union_all(lines, grid_size=g)), return_index=True)
+def hl_same_(a, b):
+    return a[0].shape == b[0].shape and np.array_equal(a[0], b[0]) and np.array_equal(a[1], b[1])
+def hl_joined_(xy, ix):
+    E_ = [xy[ix == p_] for p_ in range(len(np.unique(ix)))]
+    at_ = lambda h: tuple(E_[h // 2][0 if h % 2 == 0 else -1])              # half edge h's origin
+    star_ = collections.defaultdict(list)
+    for h_ in range(2 * len(E_)):
+        star_[at_(h_)].append(h_)
+    seen_, lines_ = set(), []
+    def walk_(h):
+        pts_, e_ = [], h
+        while e_ is not None:
+            seen_.update((e_, e_ ^ 1))
+            pts_ += [q for q in map(tuple, E_[e_ // 2][::1 if e_ % 2 == 0 else -1]) if not pts_ or pts_[-1] != q]
+            on_ = [x for x in star_[at_(e_ ^ 1)] if x not in seen_] if len(star_[at_(e_ ^ 1)]) == 2 else []
+            e_ = on_[0] if on_ else None
+        lines_.append(pts_[::1 if h % 2 == 0 else -1])
+    for h_ in [h_ for h_ in range(2 * len(E_)) if len(star_[at_(h_)]) != 2] + list(range(2 * len(E_))):
+        if h_ not in seen_:
+            walk_(h_)
+    if not lines_:
+        return hl_sh_.from_wkt('GEOMETRYCOLLECTION EMPTY')
+    return hl_sh_.multilinestrings([hl_sh_.linestrings(l_) for l_ in lines_])
+hl_union_all_ = hl_sh_.union_all
+sr_rng_ = np.random.default_rng(7)
+sr_ = [(g_, hl_segs_(sr_rng_, g_)) for g_ in (0.05 / 28.3464567, 0.05 / 0.0283464567, 0.05, 1 / 3) for _ in range(12)]
+sr_plain_ = sum(hl_same_(hl_.snap_round(P_, g_), hl_parts_(hl_sh_.linestrings(P_.reshape(-1, 2, 2)), g_)) for g_, P_ in sr_)
+hl_sh_.union_all = lambda lines, grid_size=None: hl_joined_(*hl_sh_.get_coordinates(hl_sh_.get_parts(
+    hl_union_all_(lines, grid_size=grid_size)), return_index=True))
+try:
+    sr_joined_ = sum(hl_same_(hl_.snap_round(P_, g_), hl_parts_(hl_sh_.linestrings(P_.reshape(-1, 2, 2)), g_)) for g_, P_ in sr_)
+    sr_rings_ = sum(any((xy_[ix_ == p_][0] == xy_[ix_ == p_][-1]).all() for p_ in np.unique(ix_))
+                    for xy_, ix_ in (hl_parts_(hl_sh_.linestrings(P_.reshape(-1, 2, 2)), g_) for g_, P_ in sr_))
+finally:
+    hl_sh_.union_all = hl_union_all_
+ok(sr_plain_ == sr_joined_ == len(sr_) and sr_rings_ == len(sr_),
+   f'hidden-lines: snap_round gives union_all\'s noded parts, the same values in order, in {sr_plain_} of {len(sr_)} sets of '
+   f'lines, and in {sr_joined_} with the edges joined as GEOS 3.15 joins them ({sr_rings_} with a ring)')
+# 10,000 lone lines in raster order, then a pair crossing, a line given 1,000 times and 4,352 long parallel lines 0.21 pt
+# apart whose boxes all meet, a lone line after each, reach GEOS's noding as the pair, two copies of the line, and the
+# long lines with the last, those boxes too crowded to tell apart; and come out as the whole set does
+sr_calls_ = []
+hl_sh_.union_all = lambda lines, grid_size=None: sr_calls_.append(len(lines)) or hl_union_all_(lines, grid_size=grid_size)
+try:
+    sr_P_ = np.r_[[[x_, y_, x_ + 20, y_] for y_ in range(0, 6000, 60) for x_ in range(0, 6000, 60)],
+                  [[7000, 3, 7030, 3], [7010, -5, 7010, 9], [7050, 0, 7060, 0]], np.tile([[7100, 0, 7100, 30]], (1000, 1)),
+                  [[7150, 0, 7160, 0]], [[-100000 + 6 * i_, 0, -70000 + 6 * i_, 30000] for i_ in range(4352)],
+                  [[20000, 0, 20020, 0]]] * 0.05
+    sr_got_ = hl_.snap_round(sr_P_, 0.05)
+finally:
+    hl_sh_.union_all = hl_union_all_
+ok(sr_calls_ == [2, 2, 4353] and hl_same_(sr_got_, hl_parts_(hl_sh_.linestrings(sr_P_.reshape(-1, 2, 2)), 0.05)),
+   f'hidden-lines: lone lines are rounded without noding and a line\'s copies past the second left out, the parts '
+   f'unchanged (union_all given {sr_calls_} lines)')
+# 3,000 crosses apart from each other, in raster order, reach GEOS's noding a block of runs begun in the same 1,024 lines
+# at a time, and come out as the whole set does
+sr_calls_ = []
+hl_sh_.union_all = lambda lines, grid_size=None: sr_calls_.append(len(lines)) or hl_union_all_(lines, grid_size=grid_size)
+try:
+    sr_P_ = np.array([[x_, y_, x_ + 10, y_ + 10, x_ + 10, y_, x_, y_ + 10] for y_ in range(0, 1500, 30)
+                      for x_ in range(0, 1800, 30)]).reshape(-1, 4) * 0.05
+    sr_got_ = hl_.snap_round(sr_P_, 0.05)
+finally:
+    hl_sh_.union_all = hl_union_all_
+ok(sr_calls_ == [1024] * 5 + [880] and hl_same_(sr_got_, hl_parts_(hl_sh_.linestrings(sr_P_.reshape(-1, 2, 2)), 0.05)),
+   f'hidden-lines: runs of more than one line next to each other are noded in blocks, the parts unchanged (union_all '
+   f'given {sr_calls_} lines)')
+
 # the earth in a drawing: cut-rooms' ground, an open surface, given a bottom face 0.5 m under its top, a line of the annex
 # 1 m under the ground 2 m past the plane, one 1 m over it, and one under it in front of the plane: the bottom face's cut
 # and the buried line go, the others stay

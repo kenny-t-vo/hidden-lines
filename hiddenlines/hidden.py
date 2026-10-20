@@ -690,6 +690,81 @@ def free_ends(lines, others, grid):
     return out
 
 
+def snap_round(P, grid):
+    """segments P (n x 4: x0, y0, x1, y1) noded by snap rounding on a grid this wide as shapely.union_all(their
+    lines, grid_size=grid) nodes them: its parts' coordinates and the part of each (shapely.get_coordinates(parts,
+    return_index=True)), the same values in the same order, but that a coordinate of 0 can come back -0.0 for 0.0 or
+    the reverse (a pixel keeps the sign of the first point to reach it, and crossings reach one in another order in a
+    run than in the whole; the graph's nodes keep no sign). GEOS nodes the lines in their order and writes each edge
+    where it first comes (from 3.15 joined through nodes of two edges: the lines from a node first, then the rings),
+    and no line's noding reaches 1.5 grid steps from it, so a run of lines whose boxes no other line's box comes within
+    two steps of is noded apart from the rest, its lines from nodes where the run is and its rings after all of those,
+    and runs next to each other can be noded together: a run of one line is its ends rounded as a point's overlay
+    rounds them, nothing where they round to one point, and runs of more than one line next to each other and begun in
+    the same 1,024 lines are noded in one call. Boxes are met 64 lines at a time, and past 32 a line and a million in
+    all (long lines across many others) the rest is one run, as it is once a line reaches the last. A line given a
+    third time or more, end for end either way, is left out: it meets every other line where the first does, to the
+    bit, and the second keeps its ends' pixels nodes (GEOS makes a node of a pixel two points reach). Noded whole,
+    lines in raster order unbalance GEOS's tree of hot pixels (the time grows as n^1.6), and a line's copies are
+    intersected pair by pair; noded a run at a time, small runs would cost a call each"""
+    import numpy as np
+    import shapely
+    n = len(P)
+    flip = (P[:, 0] > P[:, 2]) | (P[:, 0] == P[:, 2]) & (P[:, 1] > P[:, 3])
+    u = np.ascontiguousarray(np.where(flip[:, None], P[:, [2, 3, 0, 1]], P)).view(np.uint64)
+    o = np.lexsort((np.arange(n),) + tuple(u.T[::-1]))
+    s = u[o]
+    new = np.r_[True, (s[1:] != s[:-1]).any(1)]
+    Q = P[np.sort(o[np.arange(n) - np.maximum.accumulate(np.where(new, np.arange(n), 0)) < 2])]
+    L = shapely.linestrings(Q.reshape(-1, 2, 2))
+    tree = shapely.STRtree(L)
+    lo, hi = np.minimum(Q[:, :2], Q[:, 2:]) - 2 * grid, np.maximum(Q[:, :2], Q[:, 2:]) + 2 * grid
+    reach = np.arange(len(Q))                          # the last line whose box each one's comes within two steps of
+    met = 0
+    for c in range(0, len(Q), 64):
+        i, j = tree.query(shapely.box(*lo[c:c + 64].T, *hi[c:c + 64].T))
+        met += len(i)
+        if met > 32 * len(Q) + (1 << 20):             # crowded boxes (long lines across others): the rest is one run
+            reach[c:] = len(Q) - 1
+            break
+        np.maximum.at(reach, i + c, j)
+        if reach[c:c + 64].max() == len(Q) - 1:        # a line reaches the last: the rest is one run
+            break
+    last = np.flatnonzero(np.maximum.accumulate(reach) == np.arange(len(Q)))
+    first = np.r_[0, last + 1][:-1]
+    R = shapely.get_coordinates(shapely.union(shapely.points(Q[first].reshape(-1, 2)),
+                                              shapely.from_wkt('POINT EMPTY'), grid_size=grid)).reshape(-1, 4)
+    chains, rings = [], []                             # (coordinates, how many each part has)
+
+    def alone(r0, r1):
+        r = R[r0:r1]
+        r = r[(r[:, 0] != r[:, 2]) | (r[:, 1] != r[:, 3])]
+        chains.append((r.reshape(-1, 2), np.full(len(r), 2)))
+    # runs of more than one line, one call for each block of them next to each other and begun in the same 1,024 lines
+    multi = np.flatnonzero(last > first)
+    cut = np.flatnonzero((np.diff(multi) > 1) | (first[multi[1:]] // 1024 != first[multi[:-1]] // 1024)) + 1
+    r0 = 0
+    for m0, m in zip(np.r_[multi[:1], multi[cut]], np.r_[multi[cut - 1], multi[-1:]]):
+        alone(r0, m0)
+        xy, ix = shapely.get_coordinates(shapely.get_parts(shapely.union_all(L[first[m0]:last[m] + 1], grid_size=grid)),
+                                         return_index=True)
+        cnt = np.bincount(ix)
+        cnt = cnt[cnt > 0]
+        a = np.cumsum(cnt) - cnt
+        z = a + cnt - 1
+        ring = (xy[a] == xy[z]).all(1)                 # a ring: closed, its end no other part's
+        if ring.any():
+            _, inv, ends = np.unique(np.r_[xy[a], xy[z]], axis=0, return_inverse=True, return_counts=True)
+            ring &= ends[inv.ravel()[:len(a)]] == 2
+        part = np.repeat(np.arange(len(cnt)), cnt)
+        chains.append((xy[~ring[part]], cnt[~ring]))
+        rings.append((xy[ring[part]], cnt[ring]))
+        r0 = m + 1
+    alone(r0, len(first))
+    cnt = np.concatenate([c for _, c in chains + rings])
+    return np.concatenate([q for q, _ in chains + rings]), np.repeat(np.arange(len(cnt)), cnt)
+
+
 def solid_cells(lines, sides, rings, cmax, near, grid, step, tol):
     """which cells of one body's section on a clip plane are solid, from the model's own section curves, whatever the
     drawing keeps of them (drawing units throughout):
@@ -1510,8 +1585,7 @@ def build(req_path, req=None, t=None):
     # ---- the graph: snap rounding nodes crossings and merges lines lying on each other
     T1 = time.time()
     src_lines = shapely.linestrings(PC[:, [0, 1, 3, 4]].reshape(-1, 2, 2))
-    noded = shapely.union_all(src_lines, grid_size=g_)
-    xy, ix = shapely.get_coordinates(shapely.get_parts(noded), return_index=True)
+    xy, ix = snap_round(PC[:, [0, 1, 3, 4]], g_)
     E0 = []
     for i in range(len(xy) - 1):
         if ix[i] == ix[i + 1] and (xy[i, 0] != xy[i + 1, 0] or xy[i, 1] != xy[i + 1, 1]):

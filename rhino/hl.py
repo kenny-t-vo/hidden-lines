@@ -621,26 +621,34 @@ def with_weights(req, mode, roles=None, widths=None, band_of=None):
 
 
 # the drawing step's peak memory footprint (kit.py hidden-lines --rhino, macOS's default malloc), three runs on each of
-# measured over 15 exports: 0.2 GB for small sections to 4.9 GB for a large perspective section
-# (6,837,591 triangles, 116,333 segments) and 5.3 GB on its exterior (6,196,825, 98,429). The least plane over each
-# drawing's highest run, raised by 0.9 GB, the most a drawing ran over the plane fitted to the other 14, and rounded up;
-# their frames were 372 x 444 to 1,340 x 1,500 pt
-GB_BASE, GB_PER_TRIANGLE, GB_PER_SEGMENT = 1.7, 0.48e-6, 17e-6
+# 15 exports: 0.2 GB for small sections to 4.9 GB for a large perspective section (6,837,591 triangles, 116,333
+# segments) and 5.3 GB on its exterior (6,196,825, 98,429), on frames of 372 x 444 to 1,340 x 1,500 pt. With
+# triangles the ID buffer rasterizes the frame, 192 bytes a square point at its peak (hiddenlines/idbuf.py; 7.5 GB at
+# 8,000 x 4,800 pt with two triangles), counted as 200; with none it rasterizes nothing. The least plane over each
+# drawing's highest run less its frame's 200 bytes a square point, raised by 0.89 GB, the most a drawing ran over the
+# plane fitted to the other 14, and rounded up
+GB_BASE, GB_PER_TRIANGLE, GB_PER_SEGMENT, GB_PER_PT2 = 1.4, 0.52e-6, 14e-6, 0.2e-6
 
 
-def need_gb(triangles, segments):
-    """the memory the drawing step needs for an export of triangles and segments, in GB"""
-    return GB_BASE + GB_PER_TRIANGLE * triangles + GB_PER_SEGMENT * segments
+def need_gb(triangles, segments, page_pt2):
+    """the memory the drawing step needs for an export of triangles and segments on a frame of page_pt2 square points,
+    in GB"""
+    page = GB_PER_PT2 * page_pt2 if triangles else 0.0
+    return GB_BASE + GB_PER_TRIANGLE * triangles + GB_PER_SEGMENT * segments + page
 
 
-def memory_problem(triangles, segments, have_gb):
-    """a question when the drawing step would need over 0.8 of the computer's memory (have_gb), else None"""
-    need = need_gb(triangles, segments)
+def memory_problem(triangles, segments, w_pt, h_pt, have_gb):
+    """a question when the drawing step would need over 0.8 of the computer's memory (have_gb) for a frame of w_pt x
+    h_pt, else None; it names the sheet where the sheet takes more of it than the triangles"""
+    need = need_gb(triangles, segments, w_pt * h_pt)
     if not have_gb or need <= 0.8 * have_gb:
         return None
     gb = lambda x: ('%.1f' if x < 10 else '%.0f') % x
-    return ('This drawing needs about %s GB of memory for its %s triangles, and this computer has %s GB. It may run '
-            'very slowly or stop. Draw it anyway?' % (gb(need), '{:,}'.format(triangles), gb(have_gb)))
+    sheet = ''
+    if triangles and GB_PER_PT2 * w_pt * h_pt > GB_PER_TRIANGLE * triangles:
+        sheet = ' on a sheet %.1f by %.1f m' % (w_pt / 72.0 * 0.0254, h_pt / 72.0 * 0.0254)
+    return ('This drawing needs about %s GB of memory for its %s triangles%s, and this computer has %s GB. It may run '
+            'very slowly or stop. Draw it anyway?' % (gb(need), '{:,}'.format(triangles), sheet, gb(have_gb)))
 
 
 # what the drawing step prints when the Python or packages HL downloaded are damaged or missing

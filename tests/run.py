@@ -1618,6 +1618,26 @@ ok(end_ln_ is not None and abs(end_ln_[0] - 10) < 1e-3 and end_ln_[2] == -1,
    f'hidden-lines: a line passing behind a face ends where the face begins, found by halving to under a thousandth of '
    f'a point: {end_ln_}')
 
+# a page where nothing hides holds no raster, and answers as the full raster of the same page whose one triangle that
+# hides lies off it: every point seen, at the frame's corners and past it, nothing in front of any, a line's halving
+# and stretches the same
+def ib_off_(hides):
+    P_ = np.array([[(-50, 2, 0), (-40, 2, 0), (-40, 12, 0)]], dtype=float)  # left of the 20 x 20 pt frame
+    return ib_.Buffer(P_, np.zeros(1, dtype=np.int64), np.array([hides]), False, (10.0, 10.0, 1.0, 0.0, 0.0), 1.0, 20.0,
+                      20.0, 0.01, 0.1, 0.0, np.zeros((0, 4)), np.zeros(2, dtype=bool))
+X_off_, Y_off_, Z_off_ = np.array([0, 0.1, 7.3, 19.9, 20, 25, -45]), np.array([0, 19.9, 7.7, 0.2, 20, 5, 5]), np.full(7, -1.0)
+S_off_ = ib_.samples([np.array([[1.0, 5, -1], [19.0, 15, -1], [25.0, 15, -1]])], 1.0, 20.0, 20.0)
+def ib_ask_(b):
+    s_ = b.seen(*ib_.at(S_off_, False))
+    return (b.seen(X_off_, Y_off_, Z_off_).tolist(), b.front(X_off_, Y_off_).tolist(), b.front_cell(X_off_, Y_off_).tolist(),
+            b.halve(S_off_['A'], S_off_['B'], np.zeros(2), np.ones(2), np.array([False, True])).tolist(),
+            ib_.stretches(S_off_, b, s_, s_))
+b_none_, b_off_ = ib_off_(False), ib_off_(True)
+ok(b_none_.tri.shape == (0, 0) and b_off_.tri.shape == (80, 80) and ib_ask_(b_none_) == ib_ask_(b_off_)
+   and all(ib_ask_(b_none_)[0]),
+   f'hidden-lines: a page where nothing hides holds no raster and answers as the full raster of one whose only triangle '
+   f'that hides lies off it: {ib_ask_(b_none_)}')
+
 # a mesh's own edges: a box seen square on, written as the export writes a clipped mesh (three vertices a triangle),
 # has twelve, all creases; its top taken off, four of them are its open top's boundary; a vertex one float32 step off
 # its neighbour is welded to it all the same
@@ -1718,6 +1738,27 @@ def hl_widths_(svg, td, sides):
     """for each (a, b) model segment: the share drawn along it within 0.2 pt and the widths there (a line check)"""
     res_ = hl_.check_notes(svg, [dict(kind='line', path=hl_side_(td, a, b), tol_pt=0.2) for a, b in sides])
     return [(round(m, 2), w.split('widths ')[-1] if 'widths' in w else '-') for _, _, m, w in res_]
+
+# a page where nothing hides, two curves on 600 x 400 pt, is drawn with no raster, line for line as the same page with
+# a box that hides lying 5,700 pt off it, which the buffer rasterizes whole and empty
+ras_ep_, svg_ep_ = [], []
+init_ep_ = ib_.Buffer.__init__
+def rec_ep_(self, *a, **kw):
+    init_ep_(self, *a, **kw)
+    ras_ep_.append(self.tri.shape)
+ib_.Buffer.__init__ = rec_ep_
+try:
+    c_ep_ = [dict(layer='hl::ep::a', group='a', curve=[(-3, 0, -1), (3, 0, 2)]),
+             dict(layer='hl::ep::a', group='a', curve=[(-2, 1, 1), (0, 1, -1.5), (2.5, 1, 1)])]
+    for parts_ in (c_ep_, c_ep_ + [dict(layer='hl::ep::b', group='a', tris=sy_.box(100, 0, 0, 101, 1, 1))]):
+        _, svg_, _ = hl_synth_('empty-page', parts_, dict(direction=(0, 1, 0), target=(0, 0, 0)),
+                               [dict(id='a', layers=['hl::ep::*'], layer='CUT')], frame=(600, 400))
+        svg_ep_.append(svg_.read_bytes())
+finally:
+    ib_.Buffer.__init__ = init_ep_
+ok(ras_ep_ == [(0, 0), (1600, 2400)] and svg_ep_[0] == svg_ep_[1] and svg_ep_[0].count(b'<path') >= 2,
+   f'hidden-lines: a page where nothing hides is drawn with no raster, the same as with the full raster, empty: '
+   f'{ras_ep_}, the drawings {"equal" if svg_ep_[0] == svg_ep_[1] else "differ"}')
 
 # openings : a wall 0.3 m thick seen
 # from the left and above at 1:50, a wall 4 m behind it seen through, with a window; then one with a door cut from its
@@ -3005,18 +3046,31 @@ ok([(r_['short'], len(r_['places'])) for r_ in hl_lint_]
 ok([hlc_.where(r_) for r_ in hl_lint_[:2] + hl_rows_[:2]]
    == ['1 place in the drawing', '2 places in the drawing', '1 object', '2 objects'],
    'hl: the results window says where a row is: objects in the model, or places in the drawing')
-hl_mem_ = [hlc_.memory_problem(t_, s_, g_) for t_, s_, g_ in ((6837591, 116333, 8.0), (6837591, 116333, 16.0),
-                                                                (100, 10, None), (6837591, 116333, None))]
-ok(abs(hlc_.need_gb(6837591, 116333) - 7.0) < 0.1 and hl_mem_[0] and '6,837,591' in hl_mem_[0] and hl_mem_[1:] == [None] * 3,
-   f'hl: a drawing that would need over 0.8 of the computer\'s memory is asked about first, the model\'s section 7.0 GB of 8, '
+hl_mem_ = [hlc_.memory_problem(t_, s_, 1500, 972, g_) for t_, s_, g_ in ((6837591, 116333, 8.0), (6837591, 116333, 16.0),
+                                                                          (100, 10, None), (6837591, 116333, None))]
+ok(abs(hlc_.need_gb(6837591, 116333, 1500 * 972) - 6.9) < 0.1 and hl_mem_[0] and '6,837,591 triangles,' in hl_mem_[0]
+   and hl_mem_[1:] == [None] * 3,
+   f'hl: a drawing that would need over 0.8 of the computer\'s memory is asked about first, the model\'s section 6.9 GB of 8, '
    f'and not where the memory is unknown: {hl_mem_}')
-# the drawing step's highest peak in three runs, GB, on the regression exports that peaked over 1 GB: triangles,
-# segments, GB (, rhino/hl.py)
-hl_peaks_ = [(151179, 48610, 1.63), (2249657, 132278, 3.43), (2506243, 153477, 3.41), (3115053, 79709, 2.35),
-             (6196825, 98429, 5.32), (6837591, 116333, 4.92)]
-ok(all(hlc_.need_gb(t_, s_) >= g_ for t_, s_, g_ in hl_peaks_),
-   f'hl: the memory HL expects a drawing to need is over each regression drawing\'s measured peak: '
-   f'{[(round(hlc_.need_gb(t_, s_), 2), g_) for t_, s_, g_ in hl_peaks_]}')
+# the drawing step's highest peak in three runs, GB, on the regression exports that peaked over 1 GB, and on synthetic
+# pages of 3,000 x 1,800 to 8,000 x 4,800 pt with two triangles and a curve: triangles, segments, frame in pt, GB
+# (, rhino/hl.py)
+hl_peaks_ = [(151179, 48610, 1340, 1500, 1.63), (2249657, 132278, 1360, 620, 3.43), (2506243, 153477, 1320, 1190, 3.41),
+             (3115053, 79709, 1280, 1220, 2.35), (6196825, 98429, 1500, 1000, 5.32), (6837591, 116333, 1500, 972, 4.92),
+             (2, 1, 3000, 1800, 1.21), (2, 1, 5400, 3240, 3.61), (2, 1, 8000, 4800, 7.50)]
+ok(all(hlc_.need_gb(t_, s_, w_ * h_) >= g_ for t_, s_, w_, h_, g_ in hl_peaks_),
+   f'hl: the memory HL expects a drawing to need is over each regression drawing\'s measured peak and over those of '
+   f'large pages: '
+   f'{[(round(hlc_.need_gb(t_, s_, w_ * h_), 2), g_) for t_, s_, w_, h_, g_ in hl_peaks_]}')
+# a page grows what is needed by the buffer's raster where there are triangles, and not where there are none (one curve on
+# 8,000 x 4,800 pt peaked at 0.13 GB); the question names the sheet where it takes more than the triangles
+hl_pg_ = [hlc_.need_gb(2, 1, w_ * h_) for w_, h_ in ((200, 120), (8000, 4800))] + \
+    [hlc_.need_gb(0, 1, w_ * h_) for w_, h_ in ((200, 120), (8000, 4800))]
+hl_pq_ = [hlc_.memory_problem(2, 1, 8000, 4800, 8.0), hlc_.memory_problem(0, 1, 8000, 4800, 8.0)]
+ok(hl_pg_[1] - hl_pg_[0] > 7.0 and hl_pg_[2] == hl_pg_[3] < 1.5 and hl_pq_[0] and 'on a sheet 2.8 by 1.7 m,' in hl_pq_[0]
+   and hl_pq_[1] is None,
+   f'hl: a page of 8,000 x 4,800 pt adds its raster to what a drawing with triangles needs, not to one without, and the '
+   f'question then names the sheet: {[round(g_, 2) for g_ in hl_pg_]}, {hl_pq_}')
 ok([hlc_.damaged(s_) for s_ in ("ModuleNotFoundError: No module named 'shapely'", 'error: Failed to fetch: `https://x`',
                                 'ImportError: dlopen(lib.so): Library not loaded', 'FileNotFoundError: scene.json',
                                 'wrote x.svg', '')] == [True, True, True, False, False, False],

@@ -3258,7 +3258,7 @@ def drawn(doc, o, folder):
             return
         m = re.search(r'([\d,]+) segments, ([\d,]+) triangles', r)
         ask = hl.memory_problem(int(m.group(2).replace(',', '')), int(m.group(1).replace(',', '')),
-                                memory_gb()) if m else None
+                                float(req['frame']['w_pt']), float(req['frame']['h_pt']), memory_gb()) if m else None
         if ask:
             say('HL: ' + ask)
             import Eto.Forms as forms

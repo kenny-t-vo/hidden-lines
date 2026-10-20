@@ -373,8 +373,8 @@ def _halve(tri, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta, tol_a, tol_b
 
 
 class Buffer:
-    """the frame rasterized: tri (ny x nx), the index into P of the triangle nearest the camera at each pixel centre,
-    -1 for none, row j the page's y from j / R_PX to (j + 1) / R_PX pt from its foot.
+    """the frame rasterized: tri (ny x nx, or 0 x 0 where no triangle hides), the index into P of the triangle nearest
+    the camera at each pixel centre, -1 for none, row j the page's y from j / R_PX to (j + 1) / R_PX pt from its foot.
       P       the triangles (m x 3 x 3), frame x and y with z, or 1 / z in a perspective; tri_o each one's object
       use     the triangles that hide
       view    (hx, hy, f, L, sy): the frame's half width and height, the true-length factor, a perspective's focal
@@ -398,8 +398,11 @@ class Buffer:
         self.tol_a, self.tol_b = self.tols(tol_pt)
         self.planes = np.ascontiguousarray(np.reshape(planes, (-1, 4)), dtype=np.float64)
         self.cap_o = np.ascontiguousarray(cap_o, dtype=np.bool_)
-        self.tri = np.full((int(math.ceil(H * R_PX)), int(math.ceil(W * R_PX))), -1, dtype=np.int32)
         use = np.ascontiguousarray(use, dtype=np.bool_)
+        # 16 pixels a square point of page, 4 bytes each here and 8 in _raster's depth: 192 bytes while rasterizing.
+        # Where nothing hides it is 0 x 0, and every query finds no triangle at any pixel, as on a raster all -1
+        shape = (int(math.ceil(H * R_PX)), int(math.ceil(W * R_PX))) if use.any() else (0, 0)
+        self.tri = np.full(shape, -1, dtype=np.int32)
         _raster(self.P, use, self.persp, self.s, self.tri)
         self.cs = float(CELL_PX)                       # the triangles by cells of cs pixels, for the exact query
         while True:

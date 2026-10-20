@@ -1,9 +1,13 @@
-HL 0.1.0, the first public release: one command, `HL`, for Rhino 8 on Mac and Windows, that draws a model's visible lines, as Make2D does, with line weights by what each edge is, sections closed for poché, and the drawing added to the model as layered curves.
+HL 0.1.1: the Package Manager shows HL's icon and says which command to type, and models of many objects draw faster. The drawings are the same as 0.1.0's.
 
-Install it from Rhino 8's Package Manager: type `PackageManager`, search for **HiddenLines**, click Install, and restart Rhino. Or download the package for your computer from the assets below:
+- Rhino's Package Manager shows HL's icon beside HiddenLines.
+- Its description says to type `HL` to run it.
+- Placing each object on the page for the results window looked through every point of the drawing once for each object; it now sorts the points by object once. A test scene of 100,000 curves drew in 49 s instead of 90 s.
 
-- `hiddenlines-0.1.0-rh8_0-mac.yak`: a Mac, Apple silicon or Intel
-- `hiddenlines-0.1.0-rh8_0-win.yak`: Windows 10 or 11
+To update from 0.1.0, click Update for HiddenLines in the Package Manager and restart Rhino; HL keeps the Python and packages it downloaded and does not ask again. To install it, type `PackageManager` in Rhino 8, search for **HiddenLines**, click Install, and restart Rhino. Or download the package for your computer from the assets below:
+
+- `hiddenlines-0.1.1-rh8_0-mac.yak`: a Mac, Apple silicon or Intel
+- `hiddenlines-0.1.1-rh8_0-win.yak`: Windows 10 or 11
 
 **Mac.** Double-click the file. Rhino 8 opens and installs it without showing a window; its command line says "Successfully installed HiddenLines". Quit Rhino and open it again.
 

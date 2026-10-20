@@ -1510,6 +1510,40 @@ ok(not hl_ch_, f'hidden-lines: the meshes taken five vertices, triangles or poin
    f'pixels a row at a time, draw the same drawing and report as taken whole (a perspective cut, a curved cut, rooms '
    f'cut): {hl_ch_}')
 
+# the proximity queries (hidden.Segs) take long slanted segments in pieces and judge each pair on its whole segment,
+# by its distance in numpy and by GEOS within a hair of the distance: points on and a hair either side of the distance
+# from long slanted, near-parallel, short and zero-length segments get from query the pairs an STRtree's dwithin gives,
+# in its order, and from near the points it gives any pair for, through the pieces and through the whole segments
+from shapely import points as hl_points_
+def hl_segs_(S_, d_, seed):
+    rng_ = np.random.default_rng(seed)
+    segs_ = hl_.Segs(S_, 1.0)
+    j_, t_ = rng_.integers(0, len(S_), 3000), np.clip(rng_.uniform(-0.2, 1.2, 3000), 0, 1)
+    N_ = np.stack([S_[j_, 0, 1] - S_[j_, 1, 1], S_[j_, 1, 0] - S_[j_, 0, 0]], 1)
+    L_ = np.hypot(N_[:, 0], N_[:, 1])[:, None]
+    N_ = np.where(L_ > 0, N_ / np.maximum(L_, 1e-300), [1.0, 0.0])
+    e_ = rng_.choice([0.0, 1e-16, -1e-16, 1e-12, -1e-12, 0.3, -0.3], 3000)
+    P_ = np.concatenate([S_[j_, 0] + (S_[j_, 1] - S_[j_, 0]) * t_[:, None] + N_ * (d_ * (1 + e_))[:, None],
+                         rng_.uniform(-5, 105, (1000, 2))])
+    ref_ = segs_.tree.query(hl_points_(P_), predicate='dwithin', distance=d_)
+    hit_ = np.zeros(len(P_), dtype=bool)
+    hit_[ref_[0]] = True
+    qi_, si_ = segs_.query(P_, d_)
+    return (np.array_equal(qi_, ref_[0]) and np.array_equal(si_, ref_[1]) and np.array_equal(segs_.near(P_, d_), hit_),
+            segs_.by_pieces(d_))
+sg_rng_ = np.random.default_rng(3)
+sg_A_ = sg_rng_.uniform(0, 100, (400, 2))
+sg_B_ = np.concatenate([sg_A_[:100] + sg_rng_.uniform(-80, 80, (100, 2)),
+                        sg_A_[100:200] + np.c_[sg_rng_.uniform(-60, 60, 100), sg_rng_.normal(0, 0.1, 100)],
+                        sg_A_[200:300] + sg_rng_.normal(0, 1, (100, 2)), sg_A_[300:]])
+sg_mix_ = np.stack([sg_A_, sg_B_], 1)
+sg_y_ = np.arange(300) * 0.05                          # 300 lines 0.05 apart, slanted as the adversarial scenes' diagonal
+sg_diag_ = np.stack([np.c_[np.zeros(300), sg_y_], np.c_[np.full(300, 90.0), sg_y_ + 60]], 1)
+sg_got_ = [hl_segs_(sg_mix_, 0.05, 1), hl_segs_(sg_mix_, 3.0, 2), hl_segs_(sg_diag_, 0.1, 3), hl_segs_(sg_mix_[200:], 0.5, 4)]
+ok(all(s_ for s_, _ in sg_got_) and {p_ for _, p_ in sg_got_} == {True, False},
+   f'hidden-lines: the proximity queries give what an STRtree\'s dwithin gives, pair for pair and in its order, for '
+   f'points on the distance and a hair either side of it, through the pieces and the whole segments: {sg_got_}')
+
 # the ID buffer a tile at a time: in tiles of 64 pixels (16 pt), none kept between queries, scenes of 560 x 400 pt draw
 # the same drawing and report, depth bands by share and all, as in one tile over the frame, the default for them
 def hl_tiled_(scene, tile, cache):

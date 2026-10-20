@@ -338,6 +338,8 @@ def draw(folder, cache, timeout, profile=False):
     for line in out.splitlines():
         if line.startswith('PERF_RESULT '):
             result.update(json.loads(line[12:]))
+    if 'footprint_bytes' not in result and result['status'] != 'SKIP':   # off macOS: the largest child's peak so far
+        result['footprint_bytes'] = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss * 1024
     cpu_end = system_cpu()
     if cpu_start is not None and cpu_end is not None:
         delta = [(b - a) % 2**32 for a, b in zip(cpu_start, cpu_end)]

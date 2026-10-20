@@ -185,13 +185,15 @@ interpolated as 1 / z, which is affine on paper where z is not.
            model (verify.inside_cut, printed with the cuts); 0 unless a pass after the cuts' put a line back inside one
 """
 import fnmatch, json, math, re, time
-from collections import defaultdict
+from collections import Counter, defaultdict
+from functools import cached_property
 from pathlib import Path
 from archkit.project import load, PT_PER_MM
 
 LADDER = ('heavy', 'medium', 'light', 'fine')
 MESH_PT = 0.05                                         # rhino/hidden_lines.py's mesh tolerance, on paper
 CHUNK = 1 << 18                                        # vertices, triangles or points taken at a time, not all at once
+PIECE_PT = 2.0                                         # a slanted segment's pieces in proximity queries (Segs), on paper
 PLURAL = {'profile': 'profiles', 'base': 'bases', 'overlap': 'overlaps', 'step': 'steps', 'seam': 'seams',
           'crease': 'creases', 'line': 'lines', 'cut': 'cuts', 'hidden': 'hidden', 'above': 'above'}
 DASHED = {'hidden': 'HIDDEN', 'above': 'ABOVE'}     # a dashed class: the layer its lines go on
@@ -316,8 +318,8 @@ def draw_hidden(d, candidates, cuts, doubles_pt):
 
 
 def held_to_model(report, drawn, src, scene, draw_g, o_group, hidden, taken, strays, cuts, f, hx, hy, k, grid, slivers=()):
-    """the drawing held to the model, in report['model'] (drawn: each drawn path's points; src: an STRtree of the model's
-    lines as pieces, every line of the export, hidden and duplicate ones too, and the cuts, drawing units):
+    """the drawing held to the model, in report['model'] (drawn: each drawn path's points; src: the model's lines as
+    pieces (Segs), every line of the export, hidden and duplicate ones too, and the cuts, drawing units):
       off_pt       drawn length further than 1.5 grid steps from every piece: a join, a bend or a bridge, drawn but
                    not modelled; off_grid_pt the length further than 0.01 pt, which takes in the grid's own steps;
                    places, the five largest by the 2 pt cell they lie in
@@ -355,9 +357,7 @@ def held_to_model(report, drawn, src, scene, draw_g, o_group, hidden, taken, str
     Q, w = samples(drawn)
     out = {}
     for key, tol in (('off_pt', 1.5 * grid), ('off_grid_pt', 0.01 / k)):
-        hit = np.zeros(len(Q), dtype=bool)
-        if len(Q):
-            hit[src.query(shapely.points(Q), predicate='dwithin', distance=tol)[0]] = True
+        hit = src.near(Q, tol)
         out[key] = round(float(w[~hit].sum()) * k, 1)
         if key == 'off_pt':
             out['places'] = places(Q[~hit], w[~hit])
@@ -371,7 +371,7 @@ def held_to_model(report, drawn, src, scene, draw_g, o_group, hidden, taken, str
         [[a, b] for q in cuts for r in [q.exterior, *q.interiors] for a, b in zip(r.coords, list(r.coords)[1:])]
     left = np.ones(len(V), dtype=bool)
     if len(V) and d_segs:                              # nothing drawn: a lone sliver left out as a stray
-        left[shapely.STRtree(shapely.linestrings(d_segs)).query(shapely.points(V), predicate='dwithin', distance=1.5 * grid)[0]] = False
+        left = ~Segs(np.array(d_segs, dtype=float), PIECE_PT / k).near(V, 1.5 * grid)
     why_ = np.full(len(V), '', dtype=object)
     who_ = np.full(len(V), '', dtype=object)
     if cuts and left.any():
@@ -513,6 +513,141 @@ class Tris:
             _nearest_points(self.P, self.area, self.rank, self.tie, self.persp, Q, np.nonzero(live)[0] + t0, tl, th, t0,
                             nx, ny, order, starts, best, bz, br)
         return best
+
+
+class Segs:
+    """segments (n x 2 x 2) for proximity queries at the cost of what lies near them: a long slanted segment's box
+    covers much of the page, so in an STRtree of them (tree) every query meets it. query gives what tree's dwithin query
+    gives for points, pair for pair and in its order, and near whether a segment lies within the distance of each point.
+    A point's candidates are the segments whose boxes meet its own grown by the distance, as tree's dwithin takes them,
+    or, where the pieces' boxes so grown cover under half the area, the segments a piece of which meets it: the pieces
+    of the segments cut where their box is wider than step both ways, step widened where they would outnumber the
+    segments by CHUNK. A candidate is judged on its whole segment by its distance in numpy, and within eps of the
+    distance as tree judges it, by the boxes meeting and GEOSPreparedDistanceWithin (judged); the pairs are put in the
+    order tree visits the segments in. The trees and that order are made when first asked for, and a segment left whole
+    is its own piece, so a Segs asked only near holds its lines, its pieces' tree and the segments' ends, runs and boxes"""
+
+    def __init__(self, S, step, lines=None):
+        import numpy as np
+        import shapely
+        self.S = np.asarray(S, dtype=float).reshape(-1, 2, 2)
+        self.lines = shapely.linestrings(self.S) if lines is None else lines
+        self.lo, self.hi = self.S.min(1), self.S.max(1)
+        self.ab = self.S[:, 1] - self.S[:, 0]
+        self.l2 = np.maximum((self.ab * self.ab).sum(1), 1e-300)
+        self.eps = 1e-9 * (1.0 + float(np.abs(self.S).max(initial=0.0)))   # over a coordinate's rounding
+        wh = self.hi - self.lo
+        side = wh.min(1)                               # each box's narrow side
+        self.step = max(step, float(side.sum()) / CHUNK)
+        self.cut = bool((side > self.step).any())
+        m = np.maximum(1, np.ceil(side / self.step))   # each segment's pieces
+        # the boxes grown by d cover a + 2 d b + 4 d^2 c: the pieces' (a, b, c), then the whole segments'
+        self.cover = ((float((wh[:, 0] * wh[:, 1] / m).sum()), float(wh.sum()), float(m.sum())),
+                      (float((wh[:, 0] * wh[:, 1]).sum()), float(wh.sum()), float(len(wh))))
+
+    @cached_property
+    def tree(self):
+        """the STRtree of the whole segments"""
+        import shapely
+        return shapely.STRtree(self.lines)
+
+    @cached_property
+    def pieces(self):
+        """an STRtree of the segments cut till no piece's box is wider than step both ways, a segment left whole its own
+        line, and each piece's segment"""
+        import numpy as np
+        import shapely
+        S = self.S
+        m = np.maximum(1, np.ceil(np.abs(S[:, 1] - S[:, 0]).min(1) / self.step)).astype(np.int64)
+        j = np.repeat(np.arange(len(S)), m)
+        G = self.lines[j]
+        c = np.flatnonzero(m[j] > 1)                   # the pieces of the segments cut
+        jc, mc, uc = j[c], m[j[c]], (np.arange(len(j)) - np.repeat(np.cumsum(m) - m, m))[c]
+        D = S[jc, 1] - S[jc, 0]
+        G[c] = shapely.linestrings(np.stack([S[jc, 0] + D * (uc / mc)[:, None], S[jc, 0] + D * ((uc + 1) / mc)[:, None]], 1))
+        return shapely.STRtree(G), j
+
+    @cached_property
+    def order(self):
+        """the segments in the order tree visits them, read from a query covering them all, and each one's place in it"""
+        import numpy as np
+        import shapely
+        lo, hi = self.lo.min(0) - 1.0, self.hi.max(0) + 1.0
+        by_rank = self.tree.query(shapely.box(lo[0], lo[1], hi[0], hi[1]))
+        rank = np.empty(len(self.S), dtype=np.int64)
+        rank[by_rank] = np.arange(len(self.S))
+        return by_rank, rank
+
+    def by_pieces(self, distance):
+        """whether the pieces' boxes grown by distance cover under half the area the whole segments' do"""
+        grown = lambda a, b, c: a + 2 * distance * b + 4 * distance ** 2 * c
+        return self.cut and grown(*self.cover[0]) < 0.5 * grown(*self.cover[1])
+
+    def ranked(self, qi, si):
+        """pairs (query, segment) each once, in tree's order"""
+        import numpy as np
+        by_rank, rank = self.order
+        key = np.sort(qi * len(self.S) + rank[si])
+        if len(key):
+            key = key[np.r_[True, key[1:] != key[:-1]]]
+        return key // len(self.S), by_rank[key % len(self.S)]
+
+    def candidates(self, P, distance, order=True):
+        """for points P (n x 2), the pairs (point, segment) whose boxes meet, the point's grown by distance, as tree's
+        dwithin takes them before judging them, or, from the pieces, those of them that may lie within distance: a
+        point's together and, with order, in tree's order"""
+        import shapely
+        if not self.by_pieces(distance):
+            return self.tree.query(shapely.box(P[:, 0] - distance, P[:, 1] - distance, P[:, 0] + distance,
+                                               P[:, 1] + distance))
+        r = distance + self.eps                        # over a piece's rounding off its segment
+        ptree, of = self.pieces
+        qi, pi = ptree.query(shapely.box(P[:, 0] - r, P[:, 1] - r, P[:, 0] + r, P[:, 1] + r))
+        return self.ranked(qi, of[pi]) if order else (qi, of[pi])
+
+    def judged(self, P, qi, si, distance):
+        """which pairs (point of P, segment) lie within distance as tree's dwithin judges them: by their distance in
+        numpy where it lies further than eps from distance either way (both are off the true distance by some 1e-15 of
+        the coordinates, eps 1e-9 of them), and within eps by the boxes meeting, the point's grown by distance, and
+        GEOSPreparedDistanceWithin"""
+        import numpy as np
+        import shapely
+        wx, wy = P[qi, 0] - self.S[si, 0, 0], P[qi, 1] - self.S[si, 0, 1]
+        ax, ay = self.ab[si, 0], self.ab[si, 1]
+        t = np.clip((wx * ax + wy * ay) / self.l2[si], 0.0, 1.0)
+        d2 = (ax * t - wx) ** 2 + (ay * t - wy) ** 2
+        eps = max(self.eps, 1e-9 * (1.0 + float(np.abs(P).max(initial=0.0))))
+        ok = d2 <= (distance - eps) ** 2
+        close = np.flatnonzero(~ok & (d2 <= (distance + eps) ** 2))
+        if len(close):
+            q_, s_ = qi[close], si[close]
+            box = (self.lo[s_, 0] <= P[q_, 0] + distance) & (self.hi[s_, 0] >= P[q_, 0] - distance) & \
+                (self.lo[s_, 1] <= P[q_, 1] + distance) & (self.hi[s_, 1] >= P[q_, 1] - distance)
+            G = shapely.points(P[q_[box]])
+            shapely.prepare(G)
+            ok[close[box]] = shapely.dwithin(G, self.lines[s_[box]], distance)
+        return ok
+
+    def query(self, P, distance):
+        """what tree.query(points P (n x 2), predicate='dwithin', distance=distance) gives, as (P's indices, the
+        segments')"""
+        import numpy as np
+        P = np.asarray(P, dtype=float)
+        qi, si = self.candidates(P, distance)
+        ok = self.judged(P, qi, si, distance)
+        return qi[ok], si[ok]
+
+    def near(self, P, distance):
+        """for points P (n x 2), whether a segment lies within distance of each, as tree's dwithin judges it, 4,096
+        points at a time"""
+        import numpy as np
+        P = np.asarray(P, dtype=float)
+        hit, n = np.zeros(len(P), dtype=bool), max(1, CHUNK >> 6)
+        for c in range(0, len(P), n):
+            Pc = P[c:c + n]
+            qi, si = self.candidates(Pc, distance, order=False)
+            hit[qi[self.judged(Pc, qi, si, distance)] + c] = True
+        return hit
 
 
 def clip(a, b, box):
@@ -1355,12 +1490,11 @@ def build(req_path, req=None, t=None):
         raise SystemExit('hidden-lines: no visible line falls inside the frame')
     PC = np.array(pieces)
     # the model's lines on paper (x0, y0, x1, y1): the graph's pieces and every line of the export besides, hidden and
-    # duplicate ones too, which a run-on must lie on and the drawing is held to (report['model'])
+    # duplicate ones too, which a run-on must lie on and the drawing is held to (report['model']); indexed (m_segs) for
+    # the doubles, the first pass to ask
     MP = np.concatenate([PC[:, [0, 1, 3, 4]], np.array([
         [a[0] * f + hx, a[1] * f + hy, b[0] * f + hx, b[1] * f + hy] for s in scene['segments']
         for a, b in zip(s['pts'], s['pts'][1:]) if a[:2] != b[:2]], dtype=float).reshape(-1, 4)])
-    m_tree = shapely.STRtree(shapely.linestrings(MP.reshape(-1, 2, 2)))
-    del MP
 
     def on_model(a, b, r=None):
         """the stretch from a to b, on the grid, within a grid step (or r) of the model's lines all along, sampled every
@@ -1368,7 +1502,7 @@ def build(req_path, req=None, t=None):
         it, half a step off at most, it lies within the 1.5 steps report['model'] holds the drawing to"""
         n = max(2, int(math.ceil(math.dist(a, b) / g_)) + 1)
         S = np.asarray(a, dtype=float) + (np.asarray(b, dtype=float) - np.asarray(a, dtype=float)) * np.linspace(0, 1, n)[:, None]
-        return len(np.unique(m_tree.query(shapely.points(S), predicate='dwithin', distance=r or g_)[0])) == n
+        return bool(m_segs.near(S, r or g_).all())
     seg_drawn = np.array([draw_g[o_group[s['o']]] for s in segs])
     seg_dash = [s.get('vis') if s.get('vis') in DASHED else None for s in segs]   # a group's hidden or above lines
     report['seconds']['read'] = round(time.time() - T0, 2)
@@ -1398,31 +1532,47 @@ def build(req_path, req=None, t=None):
     nodes = np.array(nodes)
     EA = nodes[[e[0] for e in edges]]
     EB = nodes[[e[1] for e in edges]]
-    # each edge's sources: pieces it lies along, both its ends within 1.2 grid of the piece
-    tree = shapely.STRtree(src_lines)
-    e_lines = shapely.linestrings(np.stack([EA, EB], 1))
-    qi, si_ = tree.query(e_lines, predicate='dwithin', distance=1.2 * g_)
+    # each edge's sources: pieces it lies along, both its ends within 1.2 grid of the piece. They are among the pieces
+    # within that and eps of its first end, each judged as the tree's dwithin judges it against the edge: the boxes
+    # meeting, the edge's grown by 1.2 grid, and lying within that, which an end lying within it by over eps makes so
+    # (GEOS's distance between two segments is the least from an end of one to the other, where they do not cross), else
+    # as GEOSPreparedDistanceWithin has it; 4,096 edges at a time (where hundreds of lines cross near parallel, an edge
+    # lies along dozens)
+    src_segs = Segs(PC[:, [0, 1, 3, 4]].reshape(-1, 2, 2), PIECE_PT / k, src_lines)
 
     def seg_dist(p, a, b):
         ab = b - a
         L2 = (ab ** 2).sum(1)
         tt = np.clip(((p - a) * ab).sum(1) / np.where(L2 > 0, L2, 1), 0, 1)
         return np.hypot(*(a + ab * tt[:, None] - p).T), tt
-    pa, pb = PC[si_][:, [0, 1]], PC[si_][:, [3, 4]]
-    da, _ = seg_dist(EA[qi], pa, pb)
-    db, _ = seg_dist(EB[qi], pa, pb)
-    _, tm = seg_dist((EA[qi] + EB[qi]) / 2, pa, pb)
-    along = (da <= 1.2 * g_) & (db <= 1.2 * g_)
-    qi, si_, tm = qi[along], si_[along], tm[along]
-    zmid = zl(PC[si_, 2], PC[si_, 5], tm)
     srcs = defaultdict(list)                           # edge: [(piece, depth at its middle)]
-    for e, p, z in zip(qi.tolist(), si_.tolist(), zmid.tolist()):
-        srcs[e].append((p, z))
+    d12, n_ = 1.2 * g_, max(1, CHUNK >> 6)
+    for c in range(0, len(edges), n_):
+        EA_, EB_ = EA[c:c + n_], EB[c:c + n_]
+        qi, si_ = src_segs.query(EA_, d12 + src_segs.eps)
+        pa, pb = PC[si_][:, [0, 1]], PC[si_][:, [3, 4]]
+        da, _ = seg_dist(EA_[qi], pa, pb)
+        db, _ = seg_dist(EB_[qi], pa, pb)
+        _, tm = seg_dist((EA_[qi] + EB_[qi]) / 2, pa, pb)
+        e_lo, e_hi = np.minimum(EA_, EB_)[qi], np.maximum(EA_, EB_)[qi]
+        along = (da <= d12) & (db <= d12) & \
+            (src_segs.lo[si_, 0] <= e_hi[:, 0] + d12) & (src_segs.hi[si_, 0] >= e_lo[:, 0] - d12) & \
+            (src_segs.lo[si_, 1] <= e_hi[:, 1] + d12) & (src_segs.hi[si_, 1] >= e_lo[:, 1] - d12)
+        ask = np.flatnonzero(along & (np.minimum(da, db) > d12 - src_segs.eps))
+        if len(ask):
+            G = shapely.linestrings(np.stack([EA_[qi[ask]], EB_[qi[ask]]], 1))
+            shapely.prepare(G)
+            along[ask] = shapely.dwithin(G, src_lines[si_[ask]], d12)
+        qi, si_, tm = qi[along] + c, si_[along], tm[along]
+        zmid = zl(PC[si_, 2], PC[si_, 5], tm)
+        for e, p, z in zip(qi.tolist(), si_.tolist(), zmid.tolist()):
+            srcs[e].append((p, z))
     lost = [e for e in range(len(edges)) if e not in srcs]
     if lost:                                           # snapping's own short links: the nearest piece
-        nn = tree.query_nearest(e_lines[lost], all_matches=False)
+        nn = src_segs.tree.query_nearest(shapely.linestrings(np.stack([EA[lost], EB[lost]], 1)), all_matches=False)
         for j, p in zip(nn[0].tolist(), nn[1].tolist()):
             srcs[lost[j]].append((p, PC[p, 2]))
+    del src_segs
     report['seconds']['graph'] = round(time.time() - T1, 2)
 
     # ---- each edge's owner: the nearest of its sources, the earliest group among those level with it
@@ -1819,6 +1969,7 @@ def build(req_path, req=None, t=None):
         if alive[e]:
             adj[edges[e][0]].add(e)
             adj[edges[e][1]].add(e)
+    true_of = {}                                       # node: where true_pt draws it, till a line at it comes or goes
 
     def add_node(p):
         nodes.append((float(p[0]), float(p[1])))
@@ -1831,6 +1982,8 @@ def build(req_path, req=None, t=None):
         e_extra.append(like)
         adj[a].add(len(edges) - 1)
         adj[b].add(len(edges) - 1)
+        true_of.pop(a, None)
+        true_of.pop(b, None)
         return len(edges) - 1
 
     fate = {}                                          # an edge taken out by a pass: why, for --explain
@@ -1845,6 +1998,8 @@ def build(req_path, req=None, t=None):
             fate[e] = why
         adj[edges[e][0]].discard(e)
         adj[edges[e][1]].discard(e)
+        true_of.pop(edges[e][0], None)
+        true_of.pop(edges[e][1], None)
 
     halves = {}                                        # an edge split in two: its two halves
 
@@ -2440,6 +2595,8 @@ def build(req_path, req=None, t=None):
 
     report['seconds']['cuts'] = round(time.time() - T3 - report['seconds']['meshes'], 2)
     T3d = time.time()
+    m_segs = Segs(MP.reshape(-1, 2, 2), PIECE_PT / k)
+    del MP
 
     # ---- doubles: a line beside a heavier one, within lint's DOUBLE_DEG of parallel and under doubles_pt apart, prints
     # as one heavier line, and gives way over the stretch that runs beside; the ends left are met below like any other.
@@ -2593,7 +2750,7 @@ def build(req_path, req=None, t=None):
         s_line = np.concatenate([np.full(len(Ld['P']) - 1, i) for i, Ld in enumerate(lines_)])
         s_edge = np.concatenate([np.array(Ld['edges'], dtype=np.int64) for Ld in lines_])
         s_pos = np.concatenate([Ld['pos'][:-1] for Ld in lines_])
-        s_tree = shapely.STRtree(shapely.linestrings(np.stack([SA, SB], 1)))
+        s_segs = Segs(np.stack([SA, SB], 1), PIECE_PT / k)
         s_off = np.cumsum([0] + [len(Ld['P']) - 1 for Ld in lines_])
         # each segment's source as the model gave it, before snap rounding moved it up to a grid step: whether two
         # lines lie under doubles_pt apart is decided on their sources, so it does not turn on how the grid fell (two
@@ -2606,7 +2763,13 @@ def build(req_path, req=None, t=None):
             return PC[p_, [0, 1, 3, 4]] if p_ is not None else None
         SR = np.array([src_of(e) if src_of(e) is not None else np.r_[SA[j_], SB[j_]] for j_, e in enumerate(s_edge.tolist())],
                       dtype=float).reshape(-1, 4)
+        AB = SB - SA                                   # each segment's run and length, and its source's, once
+        LAB = np.maximum(np.hypot(AB[:, 0], AB[:, 1]), 1e-300)
+        HD = SR[:, 2:] - SR[:, :2]
+        HL = np.hypot(HD[:, 0], HD[:, 1])
         rank_l = [Ld['rank'] for Ld in lines_]
+        place_l = np.empty(len(lines_), dtype=np.int64)    # each line's place in rank, the lowest first
+        place_l[sorted(range(len(lines_)), key=lambda i: rank_l[i])] = np.arange(len(lines_))
         q_dist = 1.5 * dbl
         removed = defaultdict(list)                    # line: [(from, to)] along it, gone
         for i in sorted(range(len(lines_)), key=lambda i: rank_l[i], reverse=True):
@@ -2621,19 +2784,24 @@ def build(req_path, req=None, t=None):
             dl_ = np.maximum(np.hypot(dv_[:, 0], dv_[:, 1]), 1e-300)
             Q = Ld['P'][seg_i] + dv_ * ((s_at - Ld['pos'][seg_i]) / dl_)[:, None]
             U = dv_ / dl_[:, None]
-            qi, gi = s_tree.query(shapely.points(Q), predicate='dwithin', distance=q_dist)
-            ab = SB[gi] - SA[gi]
-            lab = np.maximum(np.hypot(ab[:, 0], ab[:, 1]), 1e-300)
+            qi, gi = s_segs.candidates(Q, q_dist)     # of the line itself or a heavier one, which alone it gives way to
+            up_ = (s_line[gi] == i) | (place_l[s_line[gi]] > place_l[i])
+            qi, gi = qi[up_], gi[up_]
+            in_ = s_segs.judged(Q, qi, gi, q_dist)
+            qi, gi = qi[in_], gi[in_]
+            ab = AB[gi]
+            lab = LAB[gi]
             par = np.abs(U[qi, 0] * ab[:, 1] - U[qi, 1] * ab[:, 0]) <= sin_d * lab
             tq = ((Q[qi] - SA[gi]) * ab).sum(1) / lab ** 2
             foot = SA[gi] + ab * tq[:, None]
             gap_ = np.hypot(*(Q[qi] - foot).T)
-            sq_ = s_off[i] + seg_i[qi]                 # each sample on its own source, its gap to the heavier one's
+            sq_ = s_off[i] + seg_i                     # each sample on its own source, its gap to the heavier one's
             ra_, rd_ = SR[sq_, :2], SR[sq_, 2:] - SR[sq_, :2]
             rl_ = (rd_ ** 2).sum(1)
-            Qt = ra_ + rd_ * (((Q[qi] - ra_) * rd_).sum(1) / np.maximum(rl_, 1e-300))[:, None]
-            ha_, hd_ = SR[gi, :2], SR[gi, 2:] - SR[gi, :2]
-            hl_ = np.hypot(hd_[:, 0], hd_[:, 1])
+            Qt = (ra_ + rd_ * (((Q - ra_) * rd_).sum(1) / np.maximum(rl_, 1e-300))[:, None])[qi]
+            rl_ = rl_[qi]
+            ha_, hd_ = SR[gi, :2], HD[gi]
+            hl_ = HL[gi]
             gap_t = np.abs(hd_[:, 0] * (Qt[:, 1] - ha_[:, 1]) - hd_[:, 1] * (Qt[:, 0] - ha_[:, 0])) / np.maximum(hl_, 1e-300)
             gap_t = np.where((rl_ > 0) & (hl_ > 0) & (np.abs(gap_t - gap_) <= 1.5 * g_), gap_t, gap_)   # off by more, a source of another line
             arc_ = s_pos[gi] + tq * lab
@@ -2642,17 +2810,32 @@ def build(req_path, req=None, t=None):
             sep_ = np.abs(arc_ - s_at[qi])
             if Ld['closed']:
                 sep_ = np.minimum(sep_, total - sep_)
+            jl_ = s_line[gi]
             ok_ = par & (tq >= 0) & (tq <= 1) & np.where(
-                s_line[gi] == i, (arc_ < s_at[qi]) & (sep_ > 4 * dbl),
-                np.array([rank_l[j] > rank_l[i] for j in s_line[gi].tolist()], dtype=bool))
+                jl_ == i, (arc_ < s_at[qi]) & (sep_ > 4 * dbl), place_l[jl_] > place_l[i])
+            v_ = np.nonzero(ok_)[0]
+            if len(v_) and removed:                    # not on a stretch of the heavier line already gone
+                by_j = v_[np.argsort(jl_[v_], kind='stable')]
+                j_, at_ = np.unique(jl_[by_j], return_index=True)
+                for j, w_ in zip(j_.tolist(), np.split(by_j, at_[1:])):
+                    if j in removed:
+                        gone_ = np.zeros(len(w_), dtype=bool)
+                        for r0, r1 in removed[j]:
+                            gone_ |= (r0 <= arc_[w_]) & (arc_[w_] <= r1)
+                        ok_[w_[gone_]] = False
+                v_ = np.nonzero(ok_)[0]
+            # each sample's heavier line: the first of its pairs (a sample's pairs come together) at the least gap
+            if len(v_):
+                st_ = np.r_[0, np.flatnonzero(qi[v_][1:] != qi[v_][:-1]) + 1]
+                low_ = np.repeat(np.minimum.reduceat(gap_[v_], st_), np.diff(np.r_[st_, len(v_)]))
+                v_ = v_[np.minimum.reduceat(np.where(gap_[v_] == low_, np.arange(len(v_)), len(v_)), st_)]
             g = np.full(n_s, np.inf)
             g_src = np.full(n_s, np.inf)               # the same gap between the two lines' sources
+            g[qi[v_]], g_src[qi[v_]] = gap_[v_], gap_t[v_]
             who = [None] * n_s                         # (line, its arc, foot point)
-            for q, j, a_, gp, gt_, fx, fy, o_ in zip(qi.tolist(), s_line[gi].tolist(), arc_.tolist(), gap_.tolist(),
-                                                     gap_t.tolist(), foot[:, 0].tolist(), foot[:, 1].tolist(), ok_.tolist()):
-                if not o_ or gp >= g[q] or any(r0 <= a_ <= r1 for r0, r1 in removed[j]):
-                    continue
-                g[q], g_src[q], who[q] = gp, gt_, (j, a_, (fx, fy))
+            for q, j, a_, fx, fy in zip(qi[v_].tolist(), jl_[v_].tolist(), arc_[v_].tolist(), foot[v_, 0].tolist(),
+                                        foot[v_, 1].tolist()):
+                who[q] = (j, a_, (fx, fy))
             beside = np.isfinite(g)
             if not beside.any():
                 continue
@@ -2684,7 +2867,7 @@ def build(req_path, req=None, t=None):
                 G = np.array([g[q] for q in ks])
                 Gt = np.array([g_src[q] for q in ks])
                 js = [who[q][0] for q in ks if who[q]]
-                jm = max(set(js), key=js.count)
+                jm = max(set(js), key=Counter(js).__getitem__)
                 thr = thr_in(jm) if inside else dbl
                 t_in = g_ + touch                     # on the heavier line, to the noding grid
                 on = np.isfinite(G) & (Gt < thr)        # under the threshold as the model gives the lines
@@ -2998,6 +3181,7 @@ def build(req_path, req=None, t=None):
                     report['doubles']['examples'].append(dict(
                         layer=named(Ld), beside=named(lines_[c_[2]]),
                         length_pt=round((c_[1] - c_[0]) * k, 2), at_pt=paper(mpt, hx, hy, k)))
+        del s_segs
     # thin faces: a face between drawn lines and cuts thinner than dbl all but a speck (shrunk by dbl / 2, less than
     # (dbl / 2)^2 of it is left) prints as a heavier line, and keeps only the heaviest line round it; the cut's edges
     # stay (a beyond edge bowing out 0.607 pt from the model's cut and back to it). A line is ranked whole, by its chain's
@@ -3085,12 +3269,13 @@ def build(req_path, req=None, t=None):
     # their mean direction and left where the grid put the node along them
     nrm_pc = np.stack([-(PC[:, 4] - PC[:, 1]), PC[:, 3] - PC[:, 0]], 1)
     nrm_pc /= np.maximum(np.hypot(nrm_pc[:, 0], nrm_pc[:, 1]), 1e-300)[:, None]
+    c_pc = (nrm_pc * PC[:, [0, 1]]).sum(1)             # each piece's line, n . p = c
     def solve_at(q0, ps_):
         if not ps_:
             return tuple(q0.tolist())
         ps_ = np.array(sorted(ps_))
         N_ = nrm_pc[ps_]
-        c_ = (N_ * PC[ps_][:, [0, 1]]).sum(1)
+        c_ = c_pc[ps_]
         q = np.linalg.solve(N_.T @ N_ + 1e-6 * np.eye(2), (N_ * c_[:, None]).sum(0) + 1e-6 * q0)
         if math.dist(q, q0) > 1.5 * g_:
             u_ = np.linalg.eigh(N_.T @ N_)[1][:, 1]
@@ -3098,37 +3283,48 @@ def build(req_path, req=None, t=None):
             q = q0 - u_ * float(((N_ @ q0 - c_) * nu_).sum() / max(float((nu_ ** 2).sum()), 1e-300))
         return tuple((q if math.dist(q, q0) <= 1.5 * g_ else q0).tolist())
 
+    own_of = {}                                        # each edge's, once: from here on no edge turns a ring's or back
+
     def own_src(x):
         """the source pieces edge x is drawn from: a cut edge's section lines, any other its owner's; all of them where
         none is (a ring's edge merged with a stair's line 0.05 pt beside it, drawn halfway between, the model)"""
-        ss_ = [p_ for p_, _ in srcs[first(x)]]
-        if e_style[x] is RING:
-            own_ = [p_ for p_ in ss_ if segs[int(PC[p_, 6])].get('cut') is not None]
-        else:
-            own_ = [p_ for p_ in ss_ if segs[int(PC[p_, 6])]['o'] == int(owner[first(x)])]
-        return own_ or ss_
+        if x not in own_of:
+            ss_ = [p_ for p_, _ in srcs[first(x)]]
+            if e_style[x] is RING:
+                own_ = [p_ for p_ in ss_ if segs[int(PC[p_, 6])].get('cut') is not None]
+            else:
+                own_ = [p_ for p_ in ss_ if segs[int(PC[p_, 6])]['o'] == int(owner[first(x)])]
+            own_of[x] = own_ or ss_
+        return own_of[x]
 
     def true_pt(n):
         """node n where the paths will draw it, from the lines at it now"""
+        if n in true_of:
+            return true_of[n]
         q0 = np.array(nodes[n], dtype=float)
         ps_ = {p_ for x in adj[n] if alive[x] and e_style[x] is not None for p_ in own_src(x)}
         ends_ = [PC[p_, c_] for p_ in ps_ for c_ in ([0, 1], [3, 4])] if len(adj[n]) == 1 else []
         end_ = min(ends_, key=lambda c_: math.dist(c_, q0)) if ends_ else None
         # a free end at its line's own end where the model's is within the grid (a light well's crease ending
         # 0.003 pt off the roof's corner, the grid's steps falling between them: the model)
-        return tuple(end_.tolist()) if end_ is not None and math.dist(end_, q0) <= 1.5 * g_ else solve_at(q0, ps_)
+        true_of[n] = tuple(end_.tolist()) if end_ is not None and math.dist(end_, q0) <= 1.5 * g_ else solve_at(q0, ps_)
+        return true_of[n]
 
     reach = near * 1.02                                # past lint's near_pt, which an end measured a hair under it would fail
     cos30, cos20 = math.cos(math.radians(30)), math.cos(math.radians(20))
 
+    dir_of = {}                                        # each edge's, once, as own_of
+
     def src_dir(x):
         """the direction of edge x's longest own source piece"""
-        ps_ = own_src(x)
-        if not ps_:
-            return None
-        d_ = max((PC[p_, [3, 4]] - PC[p_, [0, 1]] for p_ in ps_), key=lambda v_: float(np.hypot(*v_)))
-        ln_ = float(np.hypot(*d_))
-        return d_ / ln_ if ln_ > 0 else None
+        if x not in dir_of:
+            ps_ = own_src(x)
+            d_ = np.zeros(2)
+            if ps_:
+                d_ = max((PC[p_, [3, 4]] - PC[p_, [0, 1]] for p_ in ps_), key=lambda v_: float(np.hypot(*v_)))
+            ln_ = float(np.hypot(*d_))
+            dir_of[x] = d_ / ln_ if ln_ > 0 else None
+        return dir_of[x]
 
     def ray_on(v, p, walk, walked):
         """the run on of free end v (at p, its line's walk back from it) along its own direction to the first line it
@@ -3215,7 +3411,8 @@ def build(req_path, req=None, t=None):
             break
         A_ = np.array([nodes[edges[e][0]] for e in live_e])
         B_ = np.array([nodes[edges[e][1]] for e in live_e])
-        tr = shapely.STRtree(shapely.linestrings(np.stack([A_, B_], 1)))
+        tr_segs = Segs(np.stack([A_, B_], 1), PIECE_PT / k)
+        tr = tr_segs.tree
         free = [v for v in list(adj) if len(adj[v]) == 1 and not on_frame(nodes[v])]
         if not free:
             break
@@ -3465,36 +3662,52 @@ def build(req_path, req=None, t=None):
                     x, w_c = y, u_c
                 excl_ = itself | adj[v]
 
-                def clear_(i_, t_):
-                    """the point t_ along the line's edge i_ clear of every other line by reach as drawn: the line itself
-                    up to there, and on from there until it first leaves the circle of near round it, is not other
-                    linework; the line coming back later is, as lint counts a hook"""
+                def clear_(i_, ts):
+                    """whether each point ts along the line's edge i_ is clear of every other line by reach as drawn:
+                    the line itself up to there, and on from there until it first leaves the circle of near round it, is
+                    not other linework; the line coming back later is, as lint counts a hook"""
                     _, w_i, u_i = line_[i_]
-                    q_ = np.array(nodes[w_i]) + (np.array(nodes[u_i]) - np.array(nodes[w_i])) * t_
-                    q_t = tpt(w_i) + (tpt(u_i) - tpt(w_i)) * t_
-                    own_ = {x_ for x_, _, _ in line_[:i_ + 1]}
-                    for x_, _, u_ in line_[i_ + 1:]:
-                        own_.add(x_)
-                        if math.dist(q_, nodes[u_]) >= near:
-                            break
-                    for jr in tr.query(shapely.points(q_), predicate='dwithin', distance=reach + 3 * g_).tolist():
+                    Q_ = np.array(nodes[w_i]) + (np.array(nodes[u_i]) - np.array(nodes[w_i])) * ts[:, None]
+                    QT = tpt(w_i) + (tpt(u_i) - tpt(w_i)) * ts[:, None]
+                    head_ = {x_ for x_, _, _ in line_[:i_ + 1]}
+                    tails = []
+                    for q_ in Q_:
+                        tails.append(set())
+                        for x_, _, u_ in line_[i_ + 1:]:
+                            tails[-1].add(x_)
+                            if math.dist(q_, nodes[u_]) >= near:
+                                break
+                    by_q, by_x = [], []                # each point and a line by it
+                    qr_, jr_ = tr_segs.query(Q_, reach + 3 * g_)
+                    for q, jr in zip(qr_.tolist(), jr_.tolist()):
                         for x in live_of(live_e[jr]):
-                            if x not in excl_ and x not in own_ and alive[x] and float(seg_dist(
-                                    q_t[None], tpt(edges[x][0])[None], tpt(edges[x][1])[None])[0][0]) < reach:
-                                return False
-                    return True
+                            if x not in excl_ and x not in head_ and x not in tails[q] and alive[x]:
+                                by_q.append(q)
+                                by_x.append(x)
+                    ok = np.ones(len(ts), dtype=bool)
+                    if by_q:
+                        dd_q = seg_dist(QT[by_q], np.array([tpt(edges[x][0]) for x in by_x]),
+                                        np.array([tpt(edges[x][1]) for x in by_x]))[0]
+                        ok[np.array(by_q)[dd_q < reach]] = False
+                    return ok
                 cut_, whole = [], True
                 for i_c, (x, w_c, u_c) in enumerate(line_):
                     # the first point along the edge, every 0.25 pt, clear (an edge's far node may be a corner where it
-                    # is not, its middle clear: a box's edge 42 pt long ending 0.3 pt short of its corner)
+                    # is not, its middle clear: a box's edge 42 pt long ending 0.3 pt short of its corner); 64 points to
+                    # a query
                     ts_ = np.linspace(0.0, 1.0, max(2, int(math.ceil(elen(x) * k / 0.25)) + 1))[1:]
-                    t_ok = next((t_ for t_ in ts_ if clear_(i_c, float(t_))), None)
+                    t_ok = None
+                    for s0 in range(0, len(ts_), 64):
+                        ok_s = clear_(i_c, ts_[s0:s0 + 64])
+                        if ok_s.any():
+                            t_ok = ts_[s0 + int(np.argmax(ok_s))]
+                            break
                     if t_ok is not None:
                         lo_, hi_ = float(t_ok) - 1.0 / (len(ts_)), float(t_ok)   # where along the edge it clears: halved
                         lo_ = max(lo_, 0.0)
                         for _ in range(20):
                             mid_ = (lo_ + hi_) / 2
-                            lo_, hi_ = (mid_, hi_) if not clear_(i_c, mid_) else (lo_, mid_)
+                            lo_, hi_ = (mid_, hi_) if not clear_(i_c, np.array([mid_]))[0] else (lo_, mid_)
                         P0_, P1_ = np.array(nodes[w_c]), np.array(nodes[u_c])
                         q_c = P0_ + (P1_ - P0_) * hi_
                         if math.dist(q_c, P1_) > g_ / 2:
@@ -3653,12 +3866,14 @@ def build(req_path, req=None, t=None):
             if len(set(pts_n[j:])) >= 3:
                 return loops_apart(pts_n[:j + 1], False) + [(pts_n[j:], True)]
         return [(pts_n, False)]
-    def src_near(x, p):
-        """the point of edge x's own source pieces nearest p"""
+    def src_near(x, p, off):
+        """the point of edge x's own source pieces nearest p; None where one lies within off of p"""
         best, p = None, np.asarray(p, dtype=float)
         for p_ in own_src(x):
             a_, ab = PC[p_, [0, 1]], PC[p_, [3, 4]] - PC[p_, [0, 1]]
             q_ = a_ + ab * min(1.0, max(0.0, float((p - a_) @ ab) / max(float(ab @ ab), 1e-300)))
+            if math.dist(q_, p) <= off:
+                return None
             if best is None or math.dist(q_, p) < math.dist(best, p):
                 best = q_
         return best
@@ -3673,7 +3888,7 @@ def build(req_path, req=None, t=None):
             x_ = es_at.get(frozenset((pts_n[i_], pts_n[i_ + 1])))
             o_ = int(owner[first(x_)])
             if x_ is not None and x_ not in ran_on:
-                qa, qb = src_near(x_, P[i_]), src_near(x_, P[i_ + 1])
+                qa, qb = src_near(x_, P[i_], 1.5 * g_), src_near(x_, P[i_ + 1], 1.5 * g_)
                 if qa is not None and math.dist(qa, P[i_]) > 1.5 * g_ and not on_model(P[i_], P[i_ + 1], 1.5 * g_):
                     out.append(tuple(qa.tolist()))
                     sources.append(o_)
@@ -3785,7 +4000,7 @@ def build(req_path, req=None, t=None):
             lengths[('HIDDEN', sub)] += LineString(P).length * k
         drawn_paths += [P for _, P in hidden_paths]
     report['seconds']['paths'] = round(time.time() - T4, 2)
-    held_to_model(report, drawn_paths, m_tree, scene, draw_g, o_group,
+    held_to_model(report, drawn_paths, m_segs, scene, draw_g, o_group,
                   [(named_o(h.get('by')), h['pts']) for h in faced_hid] if by_faces else [],
                   [(nodes[edges[e][0]], nodes[edges[e][1]], why, named_o(fate_by.get(e))) for e, why in fate.items()],
                   stray_P, cut_polys, f, hx, hy, k, g_, slivers)

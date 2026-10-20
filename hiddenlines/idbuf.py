@@ -23,7 +23,9 @@ hands it the projected triangles and the lines that may be drawn, and takes back
 Coordinates are hidden.py's frame units (the frame's lower left corner at the origin, a point on the page k of them)
 with the camera's z for depth, nearer larger; a perspective's triangles carry 1 / z, which is affine on the page. The
 compiled functions are cached in NUMBA_CACHE_DIR, ~/.cache/kit-numba unless set, off the drive, where every file
-takes half a megabyte.
+takes half a megabyte. The raster, the queries and the halving run on nw workers, numba's thread count, which the
+caller passes (a compiled function that reads it is not cached): worker w takes runs w, w + nw, ... of RUN points or
+pieces, or of ROW_RUN rows, and each answer is the one a single worker gives.
 """
 import math, os
 from collections import OrderedDict
@@ -32,7 +34,7 @@ from pathlib import Path
 os.environ.setdefault('NUMBA_CACHE_DIR', str(Path.home() / '.cache' / 'kit-numba'))
 
 import numpy as np
-from numba import njit, prange
+from numba import get_num_threads, njit, prange
 
 R_PX = 4.0                                             # pixels a point on the page
 STEP_PT = 0.25                                         # between a line's samples
@@ -42,6 +44,8 @@ CELL_ITEMS = 200_000_000                               # entries than this
 TILE_PX = 4096                                         # the raster's tiles a side, to a whole number of cells
 APRON_PX = 2                                           # pixels round a tile held with it, fewer than a cell's
 TILE_CACHE = 512 << 20                                 # bytes of tiles kept between queries: an A0 sheet's 514 MB
+RUN = 64                                               # points or pieces a run, the runs dealt round the workers
+ROW_RUN = 8                                            # the raster's rows a run, dealt the same way
 CREASE_DEG = 20.0
 EDGE_ON = 1e-4                                         # |cos| between a face's normal and the view: under it, edge-on
 
@@ -73,52 +77,56 @@ def _nearest_points(P, area, rank, tie, persp, Q, live, tl, th, t0, nx, ny, orde
                     bz[q], br[q], best[q] = z, r, t
 
 
-@njit(cache=True)
-def _raster(P, ts, persp, s, tri, ox, oy, depth):
+@njit(cache=True, parallel=True)
+def _raster(P, ts, persp, s, tri, ox, oy, depth, nw):
     """the nearest of the triangles ts of P (m x 3 x 3) at each pixel centre of tri, the frame's pixels from (ox, oy)
-    on, s pixels a unit; depth, tri's shape, is written over"""
+    on, s pixels a unit; depth, tri's shape, is written over. Each of nw workers takes every triangle in order over
+    its own rows"""
     ny, nx = tri.shape
     depth[:, :] = -np.inf
-    for t in ts:
-        x0, y0, z0 = P[t, 0, 0] * s, P[t, 0, 1] * s, P[t, 0, 2]
-        x1, y1, z1 = P[t, 1, 0] * s, P[t, 1, 1] * s, P[t, 1, 2]
-        x2, y2, z2 = P[t, 2, 0] * s, P[t, 2, 1] * s, P[t, 2, 2]
-        A = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
-        if A == 0.0:
-            continue
-        if A < 0.0:                                    # wound clockwise as seen: a back face, rasterized reversed
-            x1, y1, z1, x2, y2, z2 = x2, y2, z2, x1, y1, z1
-            A = -A
-        i0 = max(int(math.floor(min(x0, x1, x2) - 0.5)), ox)
-        i1 = min(int(math.ceil(max(x0, x1, x2) - 0.5)), ox + nx - 1)
-        j0 = max(int(math.floor(min(y0, y1, y2) - 0.5)), oy)
-        j1 = min(int(math.ceil(max(y0, y1, y2) - 0.5)), oy + ny - 1)
-        if i0 > i1 or j0 > j1:
-            continue
-        # two triangles sharing an edge run it in opposite directions: a pixel centre exactly on it goes to the one
-        # for which it runs down, or right when level
-        e0 = (y2 - y1) < 0 or ((y2 - y1) == 0 and (x2 - x1) > 0)
-        e1 = (y0 - y2) < 0 or ((y0 - y2) == 0 and (x0 - x2) > 0)
-        e2 = (y1 - y0) < 0 or ((y1 - y0) == 0 and (x1 - x0) > 0)
-        for j in range(j0, j1 + 1):
-            py = j + 0.5
-            for i in range(i0, i1 + 1):
-                px = i + 0.5
-                w0 = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
-                w1 = (x0 - x2) * (py - y2) - (y0 - y2) * (px - x2)
-                w2 = (x1 - x0) * (py - y0) - (y1 - y0) * (px - x0)
-                if w0 < 0 or w1 < 0 or w2 < 0:
-                    continue
-                if (w0 == 0 and not e0) or (w1 == 0 and not e1) or (w2 == 0 and not e2):
-                    continue
-                zz = (w0 * z0 + w1 * z1 + w2 * z2) / A
-                if persp:
-                    if zz == 0.0:
-                        continue
-                    zz = 1.0 / zz
-                if zz > depth[j - oy, i - ox]:
-                    depth[j - oy, i - ox] = zz
-                    tri[j - oy, i - ox] = t
+    for worker in prange(nw):
+        for t in ts:
+            x0, y0, z0 = P[t, 0, 0] * s, P[t, 0, 1] * s, P[t, 0, 2]
+            x1, y1, z1 = P[t, 1, 0] * s, P[t, 1, 1] * s, P[t, 1, 2]
+            x2, y2, z2 = P[t, 2, 0] * s, P[t, 2, 1] * s, P[t, 2, 2]
+            A = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+            if A == 0.0:
+                continue
+            if A < 0.0:                                # wound clockwise as seen: a back face, rasterized reversed
+                x1, y1, z1, x2, y2, z2 = x2, y2, z2, x1, y1, z1
+                A = -A
+            i0 = max(int(math.floor(min(x0, x1, x2) - 0.5)), ox)
+            i1 = min(int(math.ceil(max(x0, x1, x2) - 0.5)), ox + nx - 1)
+            j0 = max(int(math.floor(min(y0, y1, y2) - 0.5)), oy)
+            j1 = min(int(math.ceil(max(y0, y1, y2) - 0.5)), oy + ny - 1)
+            if i0 > i1 or j0 > j1:
+                continue
+            # two triangles sharing an edge run it in opposite directions: a pixel centre exactly on it goes to the one
+            # for which it runs down, or right when level
+            e0 = (y2 - y1) < 0 or ((y2 - y1) == 0 and (x2 - x1) > 0)
+            e1 = (y0 - y2) < 0 or ((y0 - y2) == 0 and (x0 - x2) > 0)
+            e2 = (y1 - y0) < 0 or ((y1 - y0) == 0 and (x1 - x0) > 0)
+            r0, r1 = (j0 - oy) // ROW_RUN, (j1 - oy) // ROW_RUN
+            for r in range(r0 + (worker - r0) % nw, r1 + 1, nw):
+                for j in range(max(j0, oy + r * ROW_RUN), min(j1 + 1, oy + (r + 1) * ROW_RUN)):
+                    py = j + 0.5
+                    for i in range(i0, i1 + 1):
+                        px = i + 0.5
+                        w0 = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
+                        w1 = (x0 - x2) * (py - y2) - (y0 - y2) * (px - x2)
+                        w2 = (x1 - x0) * (py - y0) - (y1 - y0) * (px - x0)
+                        if w0 < 0 or w1 < 0 or w2 < 0:
+                            continue
+                        if (w0 == 0 and not e0) or (w1 == 0 and not e1) or (w2 == 0 and not e2):
+                            continue
+                        zz = (w0 * z0 + w1 * z1 + w2 * z2) / A
+                        if persp:
+                            if zz == 0.0:
+                                continue
+                            zz = 1.0 / zz
+                        if zz > depth[j - oy, i - ox]:
+                            depth[j - oy, i - ox] = zz
+                            tri[j - oy, i - ox] = t
 
 
 @njit(cache=True)
@@ -394,49 +402,61 @@ def _exact(tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx,
 
 @njit(cache=True, parallel=True)
 def _exact_all(c, tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta, tol_a,
-               tol_b, planes, cs, cnx, cny, nx, ny, tpx, ntx, X, Y, Z, out):
+               tol_b, planes, cs, cnx, cny, nx, ny, tpx, ntx, X, Y, Z, out, nw):
     """_exact for the points queried in tile c"""
-    for q in prange(X.shape[0]):
-        if _tile_of(X[q], Y[q], s, nx, ny, cnx, cny, cs, tpx, ntx)[0] == c:
-            out[q] = _exact(tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta,
-                            tol_a, tol_b, planes, cs, cnx, cny, X[q], Y[q], Z[q])
+    n = X.shape[0]
+    nruns = (n + RUN - 1) // RUN
+    for worker in prange(nw):
+        for r in range(worker, nruns, nw):
+            for q in range(r * RUN, min(r * RUN + RUN, n)):
+                if _tile_of(X[q], Y[q], s, nx, ny, cnx, cny, cs, tpx, ntx)[0] == c:
+                    out[q] = _exact(tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx, hy, f, L, sy,
+                                    s, delta, tol_a, tol_b, planes, cs, cnx, cny, X[q], Y[q], Z[q])
 
 
-@njit(cache=True)
+@njit(cache=True, parallel=True)
 def _front_all(c, tri, ox, oy, start, items, cx0, cy0, cbw, P, persp, s, cs, cnx, cny, nx, ny, tpx, ntx, delta, X, Y,
-               out):
+               out, nw):
     """the triangle nearest the camera covering each point queried in tile c, as _exact finds it, -1 for none"""
     h, w = tri.shape
-    for q in range(X.shape[0]):
-        if _tile_of(X[q], Y[q], s, nx, ny, cnx, cny, cs, tpx, ntx)[0] != c:
-            continue
-        x, y = X[q], Y[q]
-        i = int(math.floor(x * s)) - ox
-        j = int(math.floor(y * s)) - oy
-        best, bz, bf = -1, -np.inf, 1
-        for dj in range(-1, 2):
-            for di in range(-1, 2):
-                ii, jj = i + di, j + dj
-                if ii < 0 or jj < 0 or ii >= w or jj >= h:
+    n = X.shape[0]
+    nruns = (n + RUN - 1) // RUN
+    for worker in prange(nw):
+        for r in range(worker, nruns, nw):
+            for q in range(r * RUN, min(r * RUN + RUN, n)):
+                if _tile_of(X[q], Y[q], s, nx, ny, cnx, cny, cs, tpx, ntx)[0] != c:
                     continue
-                t = tri[jj, ii]
-                if t < 0 or t == best:
-                    continue
-                zt, fc = _covers(P, t, x, y, persp)
-                if zt > -np.inf and (best < 0 or _better(zt, fc, bz, bf, delta)):
-                    best, bz, bf = t, zt, fc
-        if best < 0:
-            best, bz, bf = _nearest(P, persp, s, cs, cnx, cny, start, items, cx0, cy0, cbw, x, y, delta)
-        out[q] = best
+                x, y = X[q], Y[q]
+                i = int(math.floor(x * s)) - ox
+                j = int(math.floor(y * s)) - oy
+                best, bz, bf = -1, -np.inf, 1
+                for dj in range(-1, 2):
+                    for di in range(-1, 2):
+                        ii, jj = i + di, j + dj
+                        if ii < 0 or jj < 0 or ii >= w or jj >= h:
+                            continue
+                        t = tri[jj, ii]
+                        if t < 0 or t == best:
+                            continue
+                        zt, fc = _covers(P, t, x, y, persp)
+                        if zt > -np.inf and (best < 0 or _better(zt, fc, bz, bf, delta)):
+                            best, bz, bf = t, zt, fc
+                if best < 0:
+                    best, bz, bf = _nearest(P, persp, s, cs, cnx, cny, start, items, cx0, cy0, cbw, x, y, delta)
+                out[q] = best
 
 
-@njit(cache=True)
-def _front_cell_all(c, start, items, cx0, cy0, cbw, P, persp, s, cs, cnx, cny, nx, ny, tpx, ntx, delta, X, Y, out):
+@njit(cache=True, parallel=True)
+def _front_cell_all(c, start, items, cx0, cy0, cbw, P, persp, s, cs, cnx, cny, nx, ny, tpx, ntx, delta, X, Y, out, nw):
     """the triangle nearest the camera covering each point queried in tile c of all those in its cell, the pixels not
     consulted: a triangle narrower than a pixel that wins none of them is found too"""
-    for q in range(X.shape[0]):
-        if _tile_of(X[q], Y[q], s, nx, ny, cnx, cny, cs, tpx, ntx)[0] == c:
-            out[q] = _nearest(P, persp, s, cs, cnx, cny, start, items, cx0, cy0, cbw, X[q], Y[q], delta)[0]
+    n = X.shape[0]
+    nruns = (n + RUN - 1) // RUN
+    for worker in prange(nw):
+        for r in range(worker, nruns, nw):
+            for q in range(r * RUN, min(r * RUN + RUN, n)):
+                if _tile_of(X[q], Y[q], s, nx, ny, cnx, cny, cs, tpx, ntx)[0] == c:
+                    out[q] = _nearest(P, persp, s, cs, cnx, cny, start, items, cx0, cy0, cbw, X[q], Y[q], delta)[0]
 
 
 @njit(cache=True)
@@ -474,43 +494,47 @@ def _halve_counts(A, B, ta, tb, it, persp, s, nx, ny, cnx, cny, cs, tpx, ntx, co
             count[_tile_of(x, y, s, nx, ny, cnx, cny, cs, tpx, ntx)[0] + 1] += 1
 
 
-@njit(cache=True)
+@njit(cache=True, parallel=True)
 def _halve(c, q0, q1, r0, r1, tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s,
-           delta, tol_a, tol_b, planes, cs, cnx, cny, nx, ny, tpx, ntx, A, B, ta, tb, it, cell, out):
+           delta, tol_a, tol_b, planes, cs, cnx, cny, nx, ny, tpx, ntx, A, B, ta, tb, it, cell, out, nw):
     """for each piece A -> B (frame x, y, camera z) whose next point is queried in tile c, the point between parameters
     ta (seen) and tb (not) where it turns, by halving: the last parameter seen, in out once it[e], the halvings done,
     reaches HALVINGS. The tile goes on with a piece while its point centres on a pixel in q0..q1 x r0..r1 or reads
     nothing, and leaves it at the next point for the tile that holds it; where cell is set, each point is judged against
     every triangle in its cell, as a sample between an outline's crossings was"""
-    for e in range(A.shape[0]):
-        if it[e] >= HALVINGS:
-            continue
-        a, b = ta[e], tb[e]
-        x, y, z = _along(A, B, e, 0.5 * (a + b), persp)
-        if _tile_of(x, y, s, nx, ny, cnx, cny, cs, tpx, ntx)[0] != c:
-            continue
-        while it[e] < HALVINGS:
-            m = 0.5 * (a + b)
-            x, y, z = _along(A, B, e, m, persp)
-            k, i, j = _tile_of(x, y, s, nx, ny, cnx, cny, cs, tpx, ntx)
-            if k >= 0 and not (q0 <= i <= q1 and r0 <= j <= r1):
-                break
-            if cell[e]:
-                t, zt, fc = _nearest(P, persp, s, cs, cnx, cny, start, items, cx0, cy0, cbw, x, y, delta)
-                tol = tol_a + tol_b * abs(z)
-                ok = t < 0 or _sees(t, fc, x, y, z, P, tri_o, cap_o, persp, hx, hy, f, L, sy, delta, tol,
-                                    _on_plane(x, y, z, planes, persp, hx, hy, f, L, sy, tol))
-            else:
-                ok = _exact(tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta,
-                            tol_a, tol_b, planes, cs, cnx, cny, x, y, z)
-            if ok:
-                a = m
-            else:
-                b = m
-            it[e] += 1
-        ta[e], tb[e] = a, b
-        if it[e] >= HALVINGS:
-            out[e] = a
+    n = A.shape[0]
+    nruns = (n + RUN - 1) // RUN
+    for worker in prange(nw):
+        for r in range(worker, nruns, nw):
+            for e in range(r * RUN, min(r * RUN + RUN, n)):
+                if it[e] >= HALVINGS:
+                    continue
+                a, b = ta[e], tb[e]
+                x, y, z = _along(A, B, e, 0.5 * (a + b), persp)
+                if _tile_of(x, y, s, nx, ny, cnx, cny, cs, tpx, ntx)[0] != c:
+                    continue
+                while it[e] < HALVINGS:
+                    m = 0.5 * (a + b)
+                    x, y, z = _along(A, B, e, m, persp)
+                    k, i, j = _tile_of(x, y, s, nx, ny, cnx, cny, cs, tpx, ntx)
+                    if k >= 0 and not (q0 <= i <= q1 and r0 <= j <= r1):
+                        break
+                    if cell[e]:
+                        t, zt, fc = _nearest(P, persp, s, cs, cnx, cny, start, items, cx0, cy0, cbw, x, y, delta)
+                        tol = tol_a + tol_b * abs(z)
+                        ok = t < 0 or _sees(t, fc, x, y, z, P, tri_o, cap_o, persp, hx, hy, f, L, sy, delta, tol,
+                                            _on_plane(x, y, z, planes, persp, hx, hy, f, L, sy, tol))
+                    else:
+                        ok = _exact(tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx, hy, f, L, sy,
+                                    s, delta, tol_a, tol_b, planes, cs, cnx, cny, x, y, z)
+                    if ok:
+                        a = m
+                    else:
+                        b = m
+                    it[e] += 1
+                ta[e], tb[e] = a, b
+                if it[e] >= HALVINGS:
+                    out[e] = a
 
 
 def _f64(a):
@@ -621,7 +645,7 @@ class Buffer:
         tri = np.full(shape, -1, dtype=np.int32)
         if self.depth is None:                         # for the largest window a tile can have
             self.depth = np.empty(min(self.tpx + 2 * APRON_PX, self.nx) * min(self.tpx + 2 * APRON_PX, self.ny))
-        _raster(self.P, ts, self.persp, self.s, tri, i0, j0, self.depth[:tri.size].reshape(shape))
+        _raster(self.P, ts, self.persp, self.s, tri, i0, j0, self.depth[:tri.size].reshape(shape), get_num_threads())
         cx0, cy0 = max(a * self.cpt - 1, 0), max(b * self.cpt - 1, 0)
         cbw, cbh = min((a + 1) * self.cpt + 1, self.cnx) - cx0, min((b + 1) * self.cpt + 1, self.cny) - cy0
         count = np.zeros(cbw * cbh, dtype=np.int64)
@@ -681,7 +705,7 @@ class Buffer:
         self._each(self._count(X, Y), lambda c, T: _exact_all(
             c, *T, self.P, self.tri_o, self.cap_o, self.persp, self.hx, self.hy, self.f, self.L, self.sy, self.s,
             self.delta, *tol, self.planes, self.cs, self.cnx, self.cny, self.nx, self.ny, self.tpx, self.ntx, X, Y, Z,
-            out))
+            out, get_num_threads()))
         return out
 
     def front(self, X, Y):
@@ -691,7 +715,7 @@ class Buffer:
         X, Y = _f64(X), _f64(Y)
         self._each(self._count(X, Y), lambda c, T: _front_all(
             c, *T, self.P, self.persp, self.s, self.cs, self.cnx, self.cny, self.nx, self.ny, self.tpx, self.ntx,
-            self.delta, X, Y, out))
+            self.delta, X, Y, out, get_num_threads()))
         return out
 
     def front_cell(self, X, Y):
@@ -700,7 +724,7 @@ class Buffer:
         X, Y = _f64(X), _f64(Y)
         self._each(self._count(X, Y), lambda c, T: _front_cell_all(
             c, *T[3:], self.P, self.persp, self.s, self.cs, self.cnx, self.cny, self.nx, self.ny, self.tpx, self.ntx,
-            self.delta, X, Y, out))
+            self.delta, X, Y, out, get_num_threads()))
         return out
 
     def sees(self, T, X, Y, Z):
@@ -727,7 +751,7 @@ class Buffer:
             q = (x0 - m, x0 + self.tpx - 1 + m, y0 - m, y0 + self.tpx - 1 + m) if c >= 0 else (0, -1, 0, -1)
             _halve(c, *q, *T, self.P, self.tri_o, self.cap_o, self.persp, self.hx, self.hy, self.f, self.L, self.sy,
                    self.s, self.delta, self.tol_a, self.tol_b, self.planes, self.cs, self.cnx, self.cny, self.nx,
-                   self.ny, self.tpx, self.ntx, A, B, ta, tb, it, cell, out)
+                   self.ny, self.tpx, self.ntx, A, B, ta, tb, it, cell, out, get_num_threads())
         while True:
             count = np.zeros(self.ntx * self.nty + 1, dtype=np.int64)
             _halve_counts(A, B, ta, tb, it, self.persp, *self._grid(), count)

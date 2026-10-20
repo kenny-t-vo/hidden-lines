@@ -1701,7 +1701,7 @@ for persp_ in (False, True):
     P_t_, use_t_ = ib_scene_(persp_)
     one_, ref_ = ib_tiled_(P_t_, use_t_, persp_, 1 << 20, 1 << 40)
     whole_ = np.full((80, 120), -1, dtype=np.int32)
-    ib_._raster(one_.P, np.flatnonzero(use_t_).astype(np.int32), persp_, one_.s, whole_, 0, 0, np.empty(whole_.shape))
+    ib_._raster(one_.P, np.flatnonzero(use_t_).astype(np.int32), persp_, one_.s, whole_, 0, 0, np.empty(whole_.shape), 1)
     sub_ = np.full((20, 30), -1, dtype=np.int32)
     for tile_, cache_ in ((8, 0), (16, 0), (16, 60_000), (24, 1 << 40)):
         b_t_, got_t_ = ib_tiled_(P_t_, use_t_, persp_, tile_, cache_)
@@ -1728,6 +1728,57 @@ ok(ib_tl_[False] and ib_tl_[True] and all(v_['raster'] and v_['aprons'] and v_['
    f'hidden-lines: the buffer in tiles of 8 to 24 pixels, kept or rasterized again for each query, holds the pixels of '
    f'the whole frame\'s raster and answers every query as one raster of the frame, parallel and in perspective; a page '
    f'where nothing hides rasterizes no tile: {ib_tl_}, {ib_none_}')
+
+# the buffer on numba's threads, its points, pieces and raster rows dealt round them in runs, answers as on one thread,
+# where each loop runs in its own order: on the triangles above, in tiles of 8 pixels none kept and in one tile
+import numba as nb_
+ib_threads_ = list(dict.fromkeys(k_ for k_ in (1, 2, 3, nb_.config.NUMBA_NUM_THREADS)
+                                if k_ <= nb_.config.NUMBA_NUM_THREADS))
+ib_thread_keep_ = nb_.get_num_threads()
+ib_thread_ref_, ib_thread_diff_ = {}, {}
+try:
+    for threads_ in ib_threads_:
+        nb_.set_num_threads(threads_)
+        for persp_ in (False, True):
+            P_t_, use_t_ = ib_scene_(persp_)
+            for tile_, cache_ in ((8, 0), (1 << 20, 1 << 40)):
+                b_t_, got_t_ = ib_tiled_(P_t_, use_t_, persp_, tile_, cache_)
+                whole_ = np.full((b_t_.ny, b_t_.nx), -1, dtype=np.int32)
+                depth_ = np.empty(whole_.shape)
+                ib_._raster(b_t_.P, np.flatnonzero(use_t_).astype(np.int32), persp_, b_t_.s, whole_, 0, 0, depth_,
+                            threads_)
+                got_t_ = dict(got_t_, raster=b_t_.raster().tolist(),
+                              windows=[b_t_._tile(c_)[0].tolist() for c_ in range(b_t_.ntx * b_t_.nty)],
+                              px=b_t_.px.tolist(), whole=whole_.tolist(), depth=depth_.tobytes())
+                if threads_ == 1:
+                    ib_thread_ref_[persp_, tile_] = got_t_
+                else:
+                    ref_ = ib_thread_ref_[persp_, tile_]
+                    diff_ = [k_ for k_ in ref_ if ref_[k_] != got_t_[k_]]
+                    if diff_:
+                        ib_thread_diff_[threads_, persp_, tile_] = diff_
+        # 400 triangles 0.5 to 4 pt across lying level at depth 0, where of those over a pixel the first in order takes
+        # it: the rows dealt to 2, 3 and 5 workers take them in that order
+        rng_l_ = np.random.default_rng(5)
+        c_l_, r_l_ = rng_l_.uniform(0, [30, 20], (400, 2)), rng_l_.uniform(0.5, 4.0, 400)
+        a_l_ = rng_l_.uniform(0, 2 * math.pi, (400, 3))
+        P_l_ = np.zeros((400, 3, 3))
+        P_l_[:, :, 0], P_l_[:, :, 1] = c_l_[:, :1] + r_l_[:, None] * np.cos(a_l_), c_l_[:, 1:] + r_l_[:, None] * np.sin(a_l_)
+        for nw_ in (1, 2, 3, 5):
+            tri_l_ = np.full((80, 120), -1, dtype=np.int32)
+            ib_._raster(P_l_, np.arange(400, dtype=np.int32), False, 4.0, tri_l_, 0, 0, np.empty(tri_l_.shape), nw_)
+            if (threads_, nw_) == (1, 1):
+                ib_level_ = tri_l_
+            elif not (tri_l_ == ib_level_).all():
+                ib_thread_diff_[threads_, 'level', nw_] = int((tri_l_ != ib_level_).sum())
+finally:
+    nb_.set_num_threads(ib_thread_keep_)
+ok(not ib_thread_diff_ and len(np.unique(ib_level_)) > 200,
+   f'hidden-lines: the ID buffer on {ib_threads_[1:]} threads answers as on one: every point and halving, the '
+   f'stretches, every tile\'s pixels, the depth bands\' pixels, and a direct raster of the frame with its depths, '
+   f'parallel and in perspective, in tiles of 8 pixels none kept and in one tile; and its rows dealt to 2, 3 and 5 '
+   f'workers, on one thread and on all, where triangles lie level the first in order takes the pixel as on one worker: '
+   f'{ib_thread_diff_}')
 
 # a mesh's own edges: a box seen square on, written as the export writes a clipped mesh (three vertices a triangle),
 # has twelve, all creases; its top taken off, four of them are its open top's boundary; a vertex one float32 step off

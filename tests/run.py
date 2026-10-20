@@ -1450,8 +1450,9 @@ ok(ic_r_['pieces'] == 1 and abs(ic_r_['length_pt'] - 3000 / 200 / 25.4 * 72) < 0
 # ---- visibility "faces": what is seen decided from the meshes' faces through an ID buffer (hiddenlines/idbuf.py)
 from hiddenlines import idbuf as ib_
 
-def hl_faces_(scene, edit=None, vis='faces'):
-    """a scene drawn with visibility vis, edit(scene_json) changing its export first: (report, svg, folder)"""
+def hl_faces_(scene, edit=None, vis='faces', req=None):
+    """a scene drawn with visibility vis, edit(scene_json) changing its export first, req added to its request:
+    (report, svg, folder)"""
     td_ = Path(tempfile.mkdtemp(prefix='hl-'))
     for f_ in ('request.json', 'scene.json', 'meshes.bin'):
         shutil.copy(FX / 'hidden-lines' / scene / f_, td_ / f_)
@@ -1461,6 +1462,7 @@ def hl_faces_(scene, edit=None, vis='faces'):
         (td_ / 'scene.json').write_text(json.dumps(s_))
     rq_ = json.loads((td_ / 'request.json').read_text())
     rq_['visibility'] = vis
+    rq_.update(req or {})
     (td_ / 'request.json').write_text(json.dumps(rq_))
     d_, rep_ = hl_.build(td_ / 'request.json')
     W_, H_ = rq_['frame']['w_pt'], rq_['frame']['h_pt']
@@ -1483,20 +1485,39 @@ for sc_ in hl_scenes_ + ['above', 'curved', 'curved-cut', 'hidden']:
 ok(not hl_fl_, f'hidden-lines: every scene drawn with visibility "faces" lints with no errors and the engine\'s kinds of '
    f'warning: {hl_fl_}')
 
-# what is as long as the meshes is taken hidden.CHUNK vertices, triangles or points at a time, for the drawing step's
-# peak memory: chunks of a few draw the same as one chunk
+# what is as long as the meshes is taken hidden.CHUNK vertices, triangles or points at a time, and the depth bands'
+# pixels CHUNK at a time, for the drawing step's peak memory: chunks of a few draw the same as one chunk
 def hl_chunked_(scene, n):
     keep_ = hl_.CHUNK
     hl_.CHUNK = n
     try:
-        rep_, svg_, _ = hl_faces_(scene)
+        rep_, svg_, _ = hl_faces_(scene, req=dict(depth_bands_share=[0.25, 0.6]))
     finally:
         hl_.CHUNK = keep_
     rep_.get('faces', {}).pop('seconds', None)
     return {k_: v_ for k_, v_ in rep_.items() if k_ not in ('seconds', 'request', 'scene')}, svg_.read_text()
 hl_ch_ = [sc_ for sc_ in ('fuzz-146', 'curved-cut', 'cut-rooms') if hl_chunked_(sc_, 5) != hl_chunked_(sc_, 1 << 30)]
-ok(not hl_ch_, f'hidden-lines: the meshes taken five vertices, triangles or points at a time draw the same '
-   f'drawing and report as taken whole (a perspective cut, a curved cut, rooms cut): {hl_ch_}')
+ok(not hl_ch_, f'hidden-lines: the meshes taken five vertices, triangles or points at a time, and the depth bands\' '
+   f'pixels a row at a time, draw the same drawing and report as taken whole (a perspective cut, a curved cut, rooms '
+   f'cut): {hl_ch_}')
+
+# the ID buffer a tile at a time: in tiles of 64 pixels (16 pt), none kept between queries, scenes of 560 x 400 pt draw
+# the same drawing and report, depth bands by share and all, as in one tile over the frame, the default for them
+def hl_tiled_(scene, tile, cache):
+    keep_ = ib_.TILE_PX, ib_.TILE_CACHE
+    ib_.TILE_PX, ib_.TILE_CACHE = tile, cache
+    try:
+        rep_, svg_, _ = hl_faces_(scene, req=dict(depth_bands_share=[0.25, 0.6]))
+    finally:
+        ib_.TILE_PX, ib_.TILE_CACHE = keep_
+    rep_.get('faces', {}).pop('seconds', None)
+    return {k_: v_ for k_, v_ in rep_.items() if k_ not in ('seconds', 'request', 'scene')}, svg_.read_text()
+hl_tld_ = {}
+for sc_ in ('fuzz-146', 'curved-cut', 'cut-rooms'):
+    a_, b_ = hl_tiled_(sc_, 64, 0), hl_tiled_(sc_, ib_.TILE_PX, ib_.TILE_CACHE)
+    hl_tld_[sc_] = a_ == b_ and 'depth_bands' in b_[0]
+ok(all(hl_tld_.values()), f'hidden-lines: drawn in tiles of 16 pt rasterized again for each query, a perspective cut, a '
+   f'curved cut and rooms cut draw the same drawing and report as in one tile, depth bands by share included: {hl_tld_}')
 
 try:
     hl_faces_('tjunction', vis='raster')
@@ -1580,7 +1601,8 @@ def ib_buf_(tris, objs=None, cap=None, planes=None):
 sq_ = [[(2, 2, 0), (12, 2, 0), (12, 12, 0)], [(2, 2, 0), (12, 12, 0), (2, 12, 0)]]
 b_sq_ = ib_buf_(sq_)
 seen_sq_ = b_sq_.seen(np.array([7, 7, 7, 15, 7, 7.0]), np.array([7, 7, 7, 7, 7, 7.0]), np.array([-1, 0, 1, -1, -0.05, -0.2])).tolist()
-ok(int((b_sq_.tri >= 0).sum()) == 1600 and set(np.unique(b_sq_.tri[b_sq_.tri >= 0]).tolist()) == {0, 1}
+r_sq_ = b_sq_.raster()
+ok(int((r_sq_ >= 0).sum()) == 1600 and set(np.unique(r_sq_[r_sq_ >= 0]).tolist()) == {0, 1}
    and seen_sq_ == [False, True, True, True, True, False],
    f'hidden-lines: the ID buffer gives each of a square\'s 1,600 pixel centres one of its two triangles, those on their '
    f'shared edge included, and sees a point on the face, in front of it, off it and 0.05 pt behind it, not 1 pt or '
@@ -1618,25 +1640,85 @@ ok(end_ln_ is not None and abs(end_ln_[0] - 10) < 1e-3 and end_ln_[2] == -1,
    f'hidden-lines: a line passing behind a face ends where the face begins, found by halving to under a thousandth of '
    f'a point: {end_ln_}')
 
-# a page where nothing hides holds no raster, and answers as the full raster of the same page whose one triangle that
-# hides lies off it: every point seen, at the frame's corners and past it, nothing in front of any, a line's halving
-# and stretches the same
+# the buffer a tile at a time answers as one raster of the frame would: 160 triangles on 30 x 20 pt at a point a unit,
+# a ground past the frame's edges, a sliver, corners on pixel centres, back faces and triangles off the frame among them,
+# in tiles of 8, 16 and 24 pixels, none kept between queries, one or all kept, against one tile over the frame, whose
+# raster is the whole frame's, parallel and in perspective: every tile's pixels, its apron's too; points over the frame,
+# at and just past its edges and past them seen, in front, in front in their cells and past a given triangle; lines'
+# samples halved, those of lines just past the frame's edges too, and in stretches; the depth bands' pixel a point. A
+# page where nothing hides, or whose only triangle that hides lies off it, rasterizes no tile
+def ib_scene_(persp):
+    rng_ = np.random.default_rng(7)
+    P_ = np.zeros((160, 3, 3))
+    c_, r_ = rng_.uniform([-6, -4], [36, 24], (160, 2)), rng_.choice([0.3, 2.0, 8.0, 40.0], 160)
+    a_ = rng_.uniform(0, 2 * math.pi, (160, 3))
+    P_[:, :, 0], P_[:, :, 1] = c_[:, :1] + r_[:, None] * np.cos(a_), c_[:, 1:] + r_[:, None] * np.sin(a_)
+    P_[:, :, 2] = rng_.uniform(-3, -1, (160, 1)) if not persp else 1 / rng_.uniform(-3, -1, (160, 1))
+    P_[3:40, :, :2] = np.round(P_[3:40, :, :2] * 4) / 4              # corners on pixel centres and edges
+    z_ = -4.0 if not persp else -0.25
+    P_[:3] = [[(-5, -5, z_), (35, -5, z_), (35, 25, z_)], [(-5, -5, z_), (35, 25, z_), (-5, 25, z_)],
+              [(1, 1, -1 if not persp else -1), (1.06, 1, -1 if not persp else -1), (1.03, 19, -1 if not persp else -1)]]
+    return P_, (rng_.random(160) < 0.9) | (np.arange(160) < 3)
+def ib_tiled_(P, use, persp, tile, cache):
+    """the buffer in tiles of tile pixels keeping cache bytes of them, and its answers"""
+    keep_ = ib_.TILE_PX, ib_.TILE_CACHE
+    ib_.TILE_PX, ib_.TILE_CACHE = tile, cache
+    try:
+        b_ = ib_.Buffer(P, np.arange(len(P)) % 3, use, persp, (15.0, 10.0, 1.0, 5.0 if persp else 0.0, 0.0), 1.0, 30.0,
+                        20.0, 0.01, 0.1, 0.0, np.array([[0.0, 0.0, 1.0, -2.0]]), np.array([True, False, False, False]))
+        rng_ = np.random.default_rng(11)
+        X_ = np.r_[rng_.uniform(-3, 33, 3000), rng_.uniform(-0.3, 0.3, 150), np.full(150, 30.1), rng_.uniform(0, 30, 150)]
+        Y_ = np.r_[rng_.uniform(-3, 23, 3000), rng_.uniform(0, 20, 150), rng_.uniform(0, 20, 150), np.full(150, -0.2)]
+        Z_ = rng_.uniform(-3.5, -0.5, len(X_))
+        L_ = [np.c_[rng_.uniform(-2, 32, (4, 2)), rng_.uniform(-3.5, -0.5, 4)] for _ in range(120)] + \
+            [np.array([[-0.1, -1, -2.0], [-0.1, 21, -2.0]]), np.array([[30.05, -1, -2.0], [30.05, 21, -1.0]]),
+             np.array([[-1, 20.1, -2.5], [31, 20.1, -2.5]]), np.array([[-50, 3, -2.0], [-40, 3, -2.0]])]
+        if persp:                                      # camera z, the triangles carrying 1 / z
+            Z_ = Z_ - 0.5
+            L_ = [np.c_[l_[:, :2], l_[:, 2:] - 0.5] for l_ in L_]
+        S_ = ib_.samples(L_, 1.0, 30.0, 20.0)
+        s_ = b_.seen(*ib_.at(S_, persp))
+        n_ = len(S_['A'])
+        got_ = dict(seen=b_.seen(X_, Y_, Z_).tolist(), tol=b_.seen(X_, Y_, Z_, tol_pt=0.4).tolist(),
+                    front=b_.front(X_, Y_).tolist(), cell=b_.front_cell(X_, Y_).tolist(),
+                    sees=b_.sees(b_.front_cell(X_, Y_), X_, Y_, Z_).tolist(),
+                    halve=b_.halve(S_['A'], S_['B'], np.zeros(n_), np.ones(n_), rng_.random(n_) < 0.3).tolist(),
+                    stretches=ib_.stretches(S_, b_, s_, s_))
+        return b_, got_
+    finally:
+        ib_.TILE_PX, ib_.TILE_CACHE = keep_
+ib_tl_ = {}
+for persp_ in (False, True):
+    P_t_, use_t_ = ib_scene_(persp_)
+    one_, ref_ = ib_tiled_(P_t_, use_t_, persp_, 1 << 20, 1 << 40)
+    whole_ = np.full((80, 120), -1, dtype=np.int32)
+    ib_._raster(one_.P, np.flatnonzero(use_t_).astype(np.int32), persp_, one_.s, whole_, 0, 0, np.empty(whole_.shape))
+    sub_ = np.full((20, 30), -1, dtype=np.int32)
+    for tile_, cache_ in ((8, 0), (16, 0), (16, 60_000), (24, 1 << 40)):
+        b_t_, got_t_ = ib_tiled_(P_t_, use_t_, persp_, tile_, cache_)
+        sub_[:] = -1
+        p0_, q0_ = b_t_.px_at
+        sub_[q0_:q0_ + b_t_.px.shape[0], p0_:p0_ + b_t_.px.shape[1]] = b_t_.px
+        wins_ = [b_t_._tile(c_) for c_ in range(b_t_.ntx * b_t_.nty) if b_t_.tstart[c_ + 1] > b_t_.tstart[c_]]
+        ib_tl_[persp_, tile_, cache_] = dict(
+            tiles=b_t_.ntx * b_t_.nty, made=b_t_.made, raster=bool((b_t_.raster() == whole_).all()),
+            aprons=all((t_[0] == whole_[t_[2]:t_[2] + t_[0].shape[0], t_[1]:t_[1] + t_[0].shape[1]]).all() for t_ in wins_),
+            px=bool((sub_ == whole_[2::4, 2::4]).all()), answers=[k_ for k_ in ref_ if ref_[k_] != got_t_[k_]])
+    ib_tl_[persp_] = bool((one_.raster() == whole_).all()) and one_.ntx * one_.nty == 1
 def ib_off_(hides):
     P_ = np.array([[(-50, 2, 0), (-40, 2, 0), (-40, 12, 0)]], dtype=float)  # left of the 20 x 20 pt frame
-    return ib_.Buffer(P_, np.zeros(1, dtype=np.int64), np.array([hides]), False, (10.0, 10.0, 1.0, 0.0, 0.0), 1.0, 20.0,
-                      20.0, 0.01, 0.1, 0.0, np.zeros((0, 4)), np.zeros(2, dtype=bool))
-X_off_, Y_off_, Z_off_ = np.array([0, 0.1, 7.3, 19.9, 20, 25, -45]), np.array([0, 19.9, 7.7, 0.2, 20, 5, 5]), np.full(7, -1.0)
-S_off_ = ib_.samples([np.array([[1.0, 5, -1], [19.0, 15, -1], [25.0, 15, -1]])], 1.0, 20.0, 20.0)
-def ib_ask_(b):
-    s_ = b.seen(*ib_.at(S_off_, False))
-    return (b.seen(X_off_, Y_off_, Z_off_).tolist(), b.front(X_off_, Y_off_).tolist(), b.front_cell(X_off_, Y_off_).tolist(),
-            b.halve(S_off_['A'], S_off_['B'], np.zeros(2), np.ones(2), np.array([False, True])).tolist(),
-            ib_.stretches(S_off_, b, s_, s_))
-b_none_, b_off_ = ib_off_(False), ib_off_(True)
-ok(b_none_.tri.shape == (0, 0) and b_off_.tri.shape == (80, 80) and ib_ask_(b_none_) == ib_ask_(b_off_)
-   and all(ib_ask_(b_none_)[0]),
-   f'hidden-lines: a page where nothing hides holds no raster and answers as the full raster of one whose only triangle '
-   f'that hides lies off it: {ib_ask_(b_none_)}')
+    b_ = ib_.Buffer(P_, np.zeros(1, dtype=np.int64), np.array([hides]), False, (10.0, 10.0, 1.0, 0.0, 0.0), 1.0, 20.0,
+                    20.0, 0.01, 0.1, 0.0, np.zeros((0, 4)), np.zeros(2, dtype=bool))
+    X_ = np.array([0, 0.1, 7.3, 19.9, 20, 25, -45])
+    return b_.made, b_.px.shape, b_.seen(X_, X_[::-1].copy(), np.full(7, -1.0)).all(), (b_.front(X_, X_) < 0).all()
+ib_none_ = [ib_off_(False), ib_off_(True)]
+ok(ib_tl_[False] and ib_tl_[True] and all(v_['raster'] and v_['aprons'] and v_['px'] and not v_['answers']
+                                         for k_, v_ in ib_tl_.items() if isinstance(k_, tuple))
+   and all(ib_tl_[p_, t_, 0]['made'] > 2 * ib_tl_[p_, t_, 0]['tiles'] for p_ in (False, True) for t_ in (8, 16))
+   and ib_none_ == [(0, (0, 0), True, True)] * 2,
+   f'hidden-lines: the buffer in tiles of 8 to 24 pixels, kept or rasterized again for each query, holds the pixels of '
+   f'the whole frame\'s raster and answers every query as one raster of the frame, parallel and in perspective; a page '
+   f'where nothing hides rasterizes no tile: {ib_tl_}, {ib_none_}')
 
 # a mesh's own edges: a box seen square on, written as the export writes a clipped mesh (three vertices a triangle),
 # has twelve, all creases; its top taken off, four of them are its open top's boundary; a vertex one float32 step off
@@ -1739,13 +1821,13 @@ def hl_widths_(svg, td, sides):
     res_ = hl_.check_notes(svg, [dict(kind='line', path=hl_side_(td, a, b), tol_pt=0.2) for a, b in sides])
     return [(round(m, 2), w.split('widths ')[-1] if 'widths' in w else '-') for _, _, m, w in res_]
 
-# a page where nothing hides, two curves on 600 x 400 pt, is drawn with no raster, line for line as the same page with
-# a box that hides lying 5,700 pt off it, which the buffer rasterizes whole and empty
+# a page where nothing hides, two curves on 600 x 400 pt, rasterizes no tile, and is drawn line for line as the same
+# page with a box that hides lying 5,700 pt off it, which rasterizes none either
 ras_ep_, svg_ep_ = [], []
 init_ep_ = ib_.Buffer.__init__
 def rec_ep_(self, *a, **kw):
     init_ep_(self, *a, **kw)
-    ras_ep_.append(self.tri.shape)
+    ras_ep_.append((self.made, self.px.shape))
 ib_.Buffer.__init__ = rec_ep_
 try:
     c_ep_ = [dict(layer='hl::ep::a', group='a', curve=[(-3, 0, -1), (3, 0, 2)]),
@@ -1756,9 +1838,9 @@ try:
         svg_ep_.append(svg_.read_bytes())
 finally:
     ib_.Buffer.__init__ = init_ep_
-ok(ras_ep_ == [(0, 0), (1600, 2400)] and svg_ep_[0] == svg_ep_[1] and svg_ep_[0].count(b'<path') >= 2,
-   f'hidden-lines: a page where nothing hides is drawn with no raster, the same as with the full raster, empty: '
-   f'{ras_ep_}, the drawings {"equal" if svg_ep_[0] == svg_ep_[1] else "differ"}')
+ok(ras_ep_ == [(0, (0, 0))] * 2 and svg_ep_[0] == svg_ep_[1] and svg_ep_[0].count(b'<path') >= 2,
+   f'hidden-lines: a page where nothing hides is drawn with no tile rasterized, the same as with a box that hides off '
+   f'it: {ras_ep_}, the drawings {"equal" if svg_ep_[0] == svg_ep_[1] else "differ"}')
 
 # openings : a wall 0.3 m thick seen
 # from the left and above at 1:50, a wall 4 m behind it seen through, with a window; then one with a door cut from its
@@ -3048,29 +3130,30 @@ ok([hlc_.where(r_) for r_ in hl_lint_[:2] + hl_rows_[:2]]
    'hl: the results window says where a row is: objects in the model, or places in the drawing')
 hl_mem_ = [hlc_.memory_problem(t_, s_, 1500, 972, g_) for t_, s_, g_ in ((6837591, 116333, 8.0), (6837591, 116333, 16.0),
                                                                           (100, 10, None), (6837591, 116333, None))]
-ok(abs(hlc_.need_gb(6837591, 116333, 1500 * 972) - 6.9) < 0.1 and hl_mem_[0] and '6,837,591 triangles,' in hl_mem_[0]
+ok(abs(hlc_.need_gb(6837591, 116333, 1500 * 972) - 6.7) < 0.1 and hl_mem_[0] and '6,837,591 triangles,' in hl_mem_[0]
    and hl_mem_[1:] == [None] * 3,
-   f'hl: a drawing that would need over 0.8 of the computer\'s memory is asked about first, the model\'s section 6.9 GB of 8, '
+   f'hl: a drawing that would need over 0.8 of the computer\'s memory is asked about first, the model\'s section 6.7 GB of 8, '
    f'and not where the memory is unknown: {hl_mem_}')
-# the drawing step's highest peak in three runs, GB, on the regression exports that peaked over 1 GB, and on synthetic
-# pages of 3,000 x 1,800 to 8,000 x 4,800 pt with two triangles and a curve: triangles, segments, frame in pt, GB
-# (, rhino/hl.py)
+# the drawing step's highest peak in three runs, GB, on the regression exports that peaked over 1 GB, before and with the
+# buffer in tiles, and on synthetic pages of 3,000 x 1,800 to 8,000 x 4,800 pt, two triangles filling each in a section
+# with depth bands by share, and a curve: triangles, segments, frame in pt, GB (rhino/hl.py)
 hl_peaks_ = [(151179, 48610, 1340, 1500, 1.63), (2249657, 132278, 1360, 620, 3.43), (2506243, 153477, 1320, 1190, 3.41),
-             (3115053, 79709, 1280, 1220, 2.35), (6196825, 98429, 1500, 1000, 5.32), (6837591, 116333, 1500, 972, 4.92),
-             (2, 1, 3000, 1800, 1.21), (2, 1, 5400, 3240, 3.61), (2, 1, 8000, 4800, 7.50)]
+             (3115053, 79709, 1280, 1220, 2.46), (6196825, 98429, 1500, 1000, 5.32), (6837591, 116333, 1500, 972, 5.06),
+             (2, 1, 3000, 1800, 1.04), (2, 1, 5400, 3240, 2.55), (2, 1, 8000, 4800, 4.10)]
 ok(all(hlc_.need_gb(t_, s_, w_ * h_) >= g_ for t_, s_, w_, h_, g_ in hl_peaks_),
    f'hl: the memory HL expects a drawing to need is over each regression drawing\'s measured peak and over those of '
    f'large pages: '
    f'{[(round(hlc_.need_gb(t_, s_, w_ * h_), 2), g_) for t_, s_, w_, h_, g_ in hl_peaks_]}')
-# a page grows what is needed by the buffer's raster where there are triangles, and not where there are none (one curve on
-# 8,000 x 4,800 pt peaked at 0.13 GB); the question names the sheet where it takes more than the triangles
+# a page grows what is needed where there are triangles, and not where there are none (one curve on 8,000 x 4,800 pt
+# peaked at 0.13 GB); the question names the sheet where it takes more than the triangles
 hl_pg_ = [hlc_.need_gb(2, 1, w_ * h_) for w_, h_ in ((200, 120), (8000, 4800))] + \
     [hlc_.need_gb(0, 1, w_ * h_) for w_, h_ in ((200, 120), (8000, 4800))]
-hl_pq_ = [hlc_.memory_problem(2, 1, 8000, 4800, 8.0), hlc_.memory_problem(0, 1, 8000, 4800, 8.0)]
-ok(hl_pg_[1] - hl_pg_[0] > 7.0 and hl_pg_[2] == hl_pg_[3] < 1.5 and hl_pq_[0] and 'on a sheet 2.8 by 1.7 m,' in hl_pq_[0]
-   and hl_pq_[1] is None,
-   f'hl: a page of 8,000 x 4,800 pt adds its raster to what a drawing with triangles needs, not to one without, and the '
-   f'question then names the sheet: {[round(g_, 2) for g_ in hl_pg_]}, {hl_pq_}')
+hl_pq_ = [hlc_.memory_problem(2, 1, 8000, 4800, 4.0), hlc_.memory_problem(0, 1, 8000, 4800, 4.0),
+          hlc_.memory_problem(2, 1, 8000, 4800, 8.0)]
+ok(3.6 < hl_pg_[1] - hl_pg_[0] < 3.8 and hl_pg_[2] == hl_pg_[3] < 1.5 and hl_pq_[0]
+   and 'on a sheet 2.8 by 1.7 m,' in hl_pq_[0] and hl_pq_[1] is None and hl_pq_[2] is None,
+   f'hl: a page of 8,000 x 4,800 pt adds 3.7 GB to what a drawing with triangles needs, not to one without, and the '
+   f'question then names the sheet on a computer of 4 GB, not of 8: {[round(g_, 2) for g_ in hl_pg_]}, {hl_pq_}')
 ok([hlc_.damaged(s_) for s_ in ("ModuleNotFoundError: No module named 'shapely'", 'error: Failed to fetch: `https://x`',
                                 'ImportError: dlopen(lib.so): Library not loaded', 'FileNotFoundError: scene.json',
                                 'wrote x.svg', '')] == [True, True, True, False, False, False],

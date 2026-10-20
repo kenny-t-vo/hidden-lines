@@ -622,12 +622,15 @@ def with_weights(req, mode, roles=None, widths=None, band_of=None):
 
 # the drawing step's peak memory footprint (kit.py hidden-lines --rhino, macOS's default malloc), three runs on each of
 # 15 exports: 0.2 GB for small sections to 4.9 GB for a large perspective section (6,837,591 triangles, 116,333
-# segments) and 5.3 GB on its exterior (6,196,825, 98,429), on frames of 372 x 444 to 1,340 x 1,500 pt. With
-# triangles the ID buffer rasterizes the frame, 192 bytes a square point at its peak (hiddenlines/idbuf.py; 7.5 GB at
-# 8,000 x 4,800 pt with two triangles), counted as 200; with none it rasterizes nothing. The least plane over each
-# drawing's highest run less its frame's 200 bytes a square point, raised by 0.89 GB, the most a drawing ran over the
-# plane fitted to the other 14, and rounded up
-GB_BASE, GB_PER_TRIANGLE, GB_PER_SEGMENT, GB_PER_PT2 = 1.4, 0.52e-6, 14e-6, 0.2e-6
+# segments) and 5.3 GB on its exterior (6,196,825, 98,429), on frames of 372 x 444 to 1,340 x 1,500 pt. The least plane
+# over each drawing's highest run less 200 bytes a square point of its frame, raised by 0.89 GB, the most a drawing ran
+# over the plane fitted to the other 14, and rounded up. With triangles the frame costs most where the subject fills
+# it in a section with depth bands by share: the ID buffer, rasterized a tile at a time (hiddenlines/idbuf.py), stays
+# under 1 GB, and the bands read a pixel a point, 64 bytes each in a section (hidden.py), so two triangles filling
+# 8,000 x 4,800 pt peaked at 4.1 GB (2.6 with MallocLargeCache=0), 96 bytes a square point over frames of a million and
+# more, counted as 97; with no triangle nothing is rasterized. Every run of the drawing step since, on the 15 exports
+# and on such frames, is at least 0.54 GB under it
+GB_BASE, GB_PER_TRIANGLE, GB_PER_SEGMENT, GB_PER_PT2 = 1.4, 0.52e-6, 14e-6, 0.097e-6
 
 
 def need_gb(triangles, segments, page_pt2):

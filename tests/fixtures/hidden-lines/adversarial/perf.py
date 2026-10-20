@@ -8,9 +8,10 @@ Every measured size is drawn twice in fresh processes. Larger sizes are skipped 
 a timeout, or when the preceding two paired sizes predict more than the time limit.
 --first-run draws each --real export cold/warm twice, with separate empty numba caches.
 Results resume by size; use a fresh --out after changing the engine.
-Sizes are counts except frame/frame_min (page width in pt), camera (distance 1/n m),
+Sizes are counts except frame/frame_min/frame_fill (page width in pt), camera (distance 1/n m),
 and curve (points). curve_objects adds one backdrop object to its curves. weld stacks
-triangles 1 nm apart; frame_min has one curve and no triangles.
+triangles 1 nm apart; frame_min has one curve and no triangles; frame_fill's two triangles
+fill the frame, a curve across them.
 """
 import argparse
 import ctypes
@@ -42,7 +43,8 @@ DEFAULTS = dict(triangles=[10000, 30000, 100000, 300000, 1000000, 3000000],
                 curve=[1000, 3000, 10000, 30000, 100000], stacks=[10, 30, 100, 300, 1000, 3000],
                 diagonal=[100, 300, 1000, 3000], fan=[10, 30, 100, 300, 1000, 3000],
                 curve_objects=[100, 300, 1000, 3000, 10000, 30000, 100000],
-                frame_min=[200, 600, 1800, 5400], weld=[100, 300, 1000, 3000, 6000])
+                frame_min=[200, 600, 1800, 5400], weld=[100, 300, 1000, 3000, 6000],
+                frame_fill=[200, 600, 1800, 5400])
 
 
 def obj(i, kind='mesh'):
@@ -138,13 +140,17 @@ def write(folder, kind, n):
         data['view'].update(projection='perspective', focal=8, near=0.001, shift=0)
         data['view']['xform'][2][3] = -8
         segments = [segment(0, [[-0.5 * 8 / distance, 0, -distance], [0.5 * 8 / distance, 0, -distance]])]
-    elif kind in ('frame', 'frame_min'):
+    elif kind in ('frame', 'frame_min', 'frame_fill'):
         req['frame'] = dict(w_pt=n, h_pt=n * 0.6)
         req['scale'] = 10000
         data['view']['pt_per_unit'] /= 100
         if kind == 'frame_min':
             V, F = np.zeros((0, 3)), np.zeros((0, 3), dtype=np.int64)
             segments = [segment(0, [[-1, 0, -1000], [1, 0, -1000]])]
+        elif kind == 'frame_fill':
+            half = np.array([0.49 * n, 0.49 * 0.6 * n]) / data['view']['pt_per_unit']
+            V = np.c_[np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * half, np.full(4, -5.0)]
+            segments = [segment(0, [[-0.9 * half[0], 0, -1000], [0.9 * half[0], 0, -1000]])]
         else:
             segments = [segment(0, [[-1, 0, -1000], [1, 0, -1000]])]
     if kind == 'weld' or kind in ('slivers', 'diagonal') and n <= 2:

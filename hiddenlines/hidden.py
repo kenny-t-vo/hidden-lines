@@ -1187,7 +1187,7 @@ def build(req_path, req=None, t=None):
                                stretches=len(faced), seen_pt=round(sum(x[2] for x in st_e + st_m), 1),
                                steadied_pt=round(steadied[0] * idbuf.STEP_PT, 1),
                                seconds=round(time.time() - T_f, 2))
-        tri_px, s_px = buf.tri, buf.s                  # what the depth bands read of the buffer
+        tri_px, px_at, s_px = buf.px, buf.px_at, buf.s     # what the depth bands read of the buffer
         del buf, cand, lines_, S, X_, Y_, Z_, seen, hid_j, front_o, ok_e, st_e, m_h, brk_h, st_h, en_h, eo, own_t, EA2, \
             EB2, me, EA3, EB3, D3, Q3, sil_, LM, S2, X2, Y2, Z2, seen2, ok2, j_, jm, DM, st_m
 
@@ -1665,31 +1665,52 @@ def build(req_path, req=None, t=None):
             if by_faces:
                 # with faces, by area: the subject's surfaces as the buffer sees them, a pixel centre a point, each at its
                 # depth past the plane. Counted by drawn edge, a long segment weighed as much as a mesh's short edge
-                # (the model's span fell from 5.13 to 4.75 m when segments took the place of the meshes' edges)
+                # (the model's span fell from 5.13 to 4.75 m when segments took the place of the meshes' edges). The
+                # pixels are taken CHUNK at a time: 8 bytes a pixel of the subject's are held, and with a clip plane 64
+                # while the camera points go to the model and to depths past the plane for all of them at once, two
+                # products whose last bits would change if they ran in parts
                 ctx_ = np.array([t.layer('drawing', groups[g_id].get('layer', 'CONTEXT'))['role'] == 'context'
                                  for g_id in o_group] + [True])
                 n_px = max(1, int(round(idbuf.R_PX)))
-                T_px = tri_px[n_px // 2::n_px, n_px // 2::n_px]
-                jj, ii = np.nonzero(T_px >= 0)
-                tt_ = T_px[jj, ii].astype(np.int64)
-                del T_px
-                sel = ~ctx_[tris.o[tt_]]
-                if sel.any():
-                    X_ = (ii[sel] * n_px + n_px // 2 + 0.5) / s_px
-                    Y_ = (jj[sel] * n_px + n_px // 2 + 0.5) / s_px
-                    Z_ = tris.plane_z(tt_[sel], np.stack([X_, Y_], 1))
+                step_ = max(1, CHUNK // max(tri_px.shape[1], 1))
+
+                def subject_px(r0):
+                    """the subject's pixels in step_ rows of the buffer's px from row r0, in order: (rows, columns,
+                    triangles)"""
+                    T_ = tri_px[r0:r0 + step_]
+                    jj, ii = np.nonzero(T_ >= 0)
+                    tt_ = T_[jj, ii].astype(np.int64)
+                    sel = ~ctx_[tris.o[tt_]]
+                    return jj[sel] + r0 + px_at[1], ii[sel] + px_at[0], tt_[sel]
+                n_s = sum(len(subject_px(r0)[2]) for r0 in range(0, len(tri_px), step_))
+                if n_s:
+                    got_, k_ = np.empty((n_s, 4) if cl else n_s), 0
+                    for r0 in range(0, len(tri_px), step_):
+                        jj, ii, tt_ = subject_px(r0)
+                        X_ = (ii * n_px + n_px // 2 + 0.5) / s_px
+                        Y_ = (jj * n_px + n_px // 2 + 0.5) / s_px
+                        Z_ = tris.plane_z(tt_, np.stack([X_, Y_], 1))
+                        if cl:
+                            got_[k_:k_ + len(Z_), :3] = (
+                                np.stack([(X_ - hx) * -Z_ / L_, (Y_ - hy + sy_) * -Z_ / L_, Z_], 1) if persp
+                                else np.stack([(X_ - hx) / f, (Y_ - hy) / f, Z_], 1))
+                        else:
+                            got_[k_:k_ + len(Z_)] = (z_front - Z_) * um
+                        k_ += len(Z_)
+                    del jj, ii, tt_, X_, Y_, Z_
                     if cl:
-                        Cq = (np.stack([(X_ - hx) * -Z_ / L_, (Y_ - hy + sy_) * -Z_ / L_, Z_], 1) if persp
-                              else np.stack([(X_ - hx) / f, (Y_ - hy) / f, Z_], 1))
-                        Pm = (Minv @ np.column_stack([Cq, np.ones(len(Cq))]).T).T[:, :3]
+                        got_[:, 3] = 1.0
+                        Pm = (Minv @ got_.T).T[:, :3]
+                        del got_
                         nv_ = np.array(cl['normal'], dtype=float)
                         dep_px = (Pm - np.array(cl['origin'], dtype=float)) @ nv_ / np.linalg.norm(nv_) * um
+                        del Pm
                     else:
-                        dep_px = (z_front - Z_) * um
+                        dep_px = got_
                     span = float(np.percentile(dep_px, 95))
             bands_m = [float(f'{x * span:.3g}') for x in share_] if span > 0 else []   # 3 figures: models in inches too
     if by_faces:
-        del tri_px, s_px
+        del tri_px, px_at, s_px
     if bands_m:
         report['depth_bands'] = dict(bands_m=bands_m, edges=[0] * (len(bands_m) + 1), from_span=bool(share_))
         for e, dep in deps.items():

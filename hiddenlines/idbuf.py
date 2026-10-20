@@ -5,7 +5,7 @@ hands it the projected triangles and the lines that may be drawn, and takes back
   raster  the triangles of the groups that hide, those on TEXTURE left out (a roof's tiles do not hide the roof's own
           edges), at R_PX pixels a point over the frame: each pixel centre's nearest triangle. A pixel centre on an edge
           two triangles share goes to one of them. A triangle is turned to the camera if it is wound anticlockwise on
-          the page
+          the page. It is held a tile of TILE_PX pixels at a time (Buffer)
   probe   a line sampled every STEP_PT on the page, each sample tried against the nearest triangle that covers it: of
           those the 3 x 3 pixels round it hold, or, where one of those would hide it but does not reach it (an edge of
           something in front is near: a face folded over another, a sliver under a pixel wide), of all the triangles
@@ -26,6 +26,7 @@ compiled functions are cached in NUMBA_CACHE_DIR, ~/.cache/kit-numba unless set,
 takes half a megabyte.
 """
 import math, os
+from collections import OrderedDict
 from pathlib import Path
 
 os.environ.setdefault('NUMBA_CACHE_DIR', str(Path.home() / '.cache' / 'kit-numba'))
@@ -38,6 +39,9 @@ STEP_PT = 0.25                                         # between a line's sample
 HALVINGS = 10                                          # a step halved to under a thousandth of it
 CELL_PX = 8                                            # the exact query's cells, doubled while they would hold more
 CELL_ITEMS = 200_000_000                               # entries than this
+TILE_PX = 4096                                         # the raster's tiles a side, to a whole number of cells
+APRON_PX = 2                                           # pixels round a tile held with it, fewer than a cell's
+TILE_CACHE = 512 << 20                                 # bytes of tiles kept between queries: an A0 sheet's 514 MB
 CREASE_DEG = 20.0
 EDGE_ON = 1e-4                                         # |cos| between a face's normal and the view: under it, edge-on
 
@@ -70,13 +74,12 @@ def _nearest_points(P, area, rank, tie, persp, Q, live, tl, th, t0, nx, ny, orde
 
 
 @njit(cache=True)
-def _raster(P, use, persp, s, tri):
-    """the nearest of the triangles P (m x 3 x 3) with use set at each pixel centre, s pixels a unit"""
+def _raster(P, ts, persp, s, tri, ox, oy, depth):
+    """the nearest of the triangles ts of P (m x 3 x 3) at each pixel centre of tri, the frame's pixels from (ox, oy)
+    on, s pixels a unit; depth, tri's shape, is written over"""
     ny, nx = tri.shape
-    depth = np.full((ny, nx), -np.inf)
-    for t in range(P.shape[0]):
-        if not use[t]:
-            continue
+    depth[:, :] = -np.inf
+    for t in ts:
         x0, y0, z0 = P[t, 0, 0] * s, P[t, 0, 1] * s, P[t, 0, 2]
         x1, y1, z1 = P[t, 1, 0] * s, P[t, 1, 1] * s, P[t, 1, 2]
         x2, y2, z2 = P[t, 2, 0] * s, P[t, 2, 1] * s, P[t, 2, 2]
@@ -86,10 +89,10 @@ def _raster(P, use, persp, s, tri):
         if A < 0.0:                                    # wound clockwise as seen: a back face, rasterized reversed
             x1, y1, z1, x2, y2, z2 = x2, y2, z2, x1, y1, z1
             A = -A
-        i0 = max(int(math.floor(min(x0, x1, x2) - 0.5)), 0)
-        i1 = min(int(math.ceil(max(x0, x1, x2) - 0.5)), nx - 1)
-        j0 = max(int(math.floor(min(y0, y1, y2) - 0.5)), 0)
-        j1 = min(int(math.ceil(max(y0, y1, y2) - 0.5)), ny - 1)
+        i0 = max(int(math.floor(min(x0, x1, x2) - 0.5)), ox)
+        i1 = min(int(math.ceil(max(x0, x1, x2) - 0.5)), ox + nx - 1)
+        j0 = max(int(math.floor(min(y0, y1, y2) - 0.5)), oy)
+        j1 = min(int(math.ceil(max(y0, y1, y2) - 0.5)), oy + ny - 1)
         if i0 > i1 or j0 > j1:
             continue
         # two triangles sharing an edge run it in opposite directions: a pixel centre exactly on it goes to the one
@@ -113,9 +116,35 @@ def _raster(P, use, persp, s, tri):
                     if zz == 0.0:
                         continue
                     zz = 1.0 / zz
-                if zz > depth[j, i]:
-                    depth[j, i] = zz
-                    tri[j, i] = t
+                if zz > depth[j - oy, i - ox]:
+                    depth[j - oy, i - ox] = zz
+                    tri[j - oy, i - ox] = t
+
+
+@njit(cache=True)
+def _window(P, ts, s, x0, x1, y0, y1):
+    """the pixels of [x0, x1) x [y0, y1) that the boxes of the triangles ts reach as _raster takes them: (i0, i1, j0,
+    j1), none where i0 >= i1 or j0 >= j1"""
+    i0, i1, j0, j1 = x1, x0, y1, y0
+    for t in ts:
+        a0 = max(int(math.floor(min(P[t, 0, 0] * s, P[t, 1, 0] * s, P[t, 2, 0] * s) - 0.5)), x0)
+        a1 = min(int(math.ceil(max(P[t, 0, 0] * s, P[t, 1, 0] * s, P[t, 2, 0] * s) - 0.5)), x1 - 1)
+        b0 = max(int(math.floor(min(P[t, 0, 1] * s, P[t, 1, 1] * s, P[t, 2, 1] * s) - 0.5)), y0)
+        b1 = min(int(math.ceil(max(P[t, 0, 1] * s, P[t, 1, 1] * s, P[t, 2, 1] * s) - 0.5)), y1 - 1)
+        if a0 <= a1 and b0 <= b1:
+            i0, i1, j0, j1 = min(i0, a0), max(i1, a1 + 1), min(j0, b0), max(j1, b1 + 1)
+    return i0, i1, j0, j1
+
+
+@njit(cache=True)
+def _px_fill(tri, ox, oy, x0, x1, y0, y1, n, px, p0, q0):
+    """px[q - q0, p - p0] = pixel (n // 2 + n p, n // 2 + n q) of tri, the frame's pixels from (ox, oy) on, for those
+    in [x0, x1) x [y0, y1)"""
+    h, w = tri.shape
+    a0, a1, b0, b1 = max(x0, ox), min(x1, ox + w), max(y0, oy), min(y1, oy + h)
+    for q in range(max(-(-(b0 - n // 2) // n), q0), min(-(-(b1 - n // 2) // n), q0 + px.shape[0])):
+        for p in range(max(-(-(a0 - n // 2) // n), p0), min(-(-(a1 - n // 2) // n), p0 + px.shape[1])):
+            px[q - q0, p - p0] = tri[n // 2 + n * q - oy, n // 2 + n * p - ox]
 
 
 @njit(cache=True)
@@ -193,39 +222,114 @@ def _covers(P, t, x, y, persp):
 
 
 @njit(cache=True)
-def _bin_count(P, use, s, cs, cnx, cny, count):
-    """each used triangle counted in every cell of cs pixels its box meets"""
-    for t in range(P.shape[0]):
-        if not use[t]:
-            continue
-        i0 = int(math.floor(min(P[t, 0, 0], P[t, 1, 0], P[t, 2, 0]) * s / cs))
-        i1 = int(math.floor(max(P[t, 0, 0], P[t, 1, 0], P[t, 2, 0]) * s / cs))
-        j0 = int(math.floor(min(P[t, 0, 1], P[t, 1, 1], P[t, 2, 1]) * s / cs))
-        j1 = int(math.floor(max(P[t, 0, 1], P[t, 1, 1], P[t, 2, 1]) * s / cs))
-        if i1 < 0 or j1 < 0 or i0 >= cnx or j0 >= cny:
-            continue
-        for j in range(max(j0, 0), min(j1, cny - 1) + 1):
-            for i in range(max(i0, 0), min(i1, cnx - 1) + 1):
-                count[j * cnx + i] += 1
+def _cell_box(P, t, s, cs):
+    """the cells of cs pixels that triangle t's box meets: (i0, i1, j0, j1), inclusive"""
+    return (int(math.floor(min(P[t, 0, 0], P[t, 1, 0], P[t, 2, 0]) * s / cs)),
+            int(math.floor(max(P[t, 0, 0], P[t, 1, 0], P[t, 2, 0]) * s / cs)),
+            int(math.floor(min(P[t, 0, 1], P[t, 1, 1], P[t, 2, 1]) * s / cs)),
+            int(math.floor(max(P[t, 0, 1], P[t, 1, 1], P[t, 2, 1]) * s / cs)))
 
 
 @njit(cache=True)
-def _bin_fill(P, use, s, cs, cnx, cny, start, items):
+def _bin_total(P, use, s, cs, cnx, cny):
+    """the entries of the frame's cnx x cny cells of cs pixels: each used triangle in every cell its box meets"""
+    n = 0
+    for t in range(P.shape[0]):
+        if not use[t]:
+            continue
+        i0, i1, j0, j1 = _cell_box(P, t, s, cs)
+        if i1 < 0 or j1 < 0 or i0 >= cnx or j0 >= cny:
+            continue
+        n += (min(i1, cnx - 1) - max(i0, 0) + 1) * (min(j1, cny - 1) - max(j0, 0) + 1)
+    return n
+
+
+@njit(cache=True)
+def _bin_count(P, ts, s, cs, cx0, cy0, cbw, cbh, count):
+    """each triangle of ts counted in every cell of cs pixels its box meets, of the cbw x cbh cells from (cx0, cy0)"""
+    for t in ts:
+        i0, i1, j0, j1 = _cell_box(P, t, s, cs)
+        for j in range(max(j0, cy0), min(j1, cy0 + cbh - 1) + 1):
+            for i in range(max(i0, cx0), min(i1, cx0 + cbw - 1) + 1):
+                count[(j - cy0) * cbw + i - cx0] += 1
+
+
+@njit(cache=True)
+def _bin_fill(P, ts, s, cs, cx0, cy0, cbw, cbh, start, items):
+    at = start[:-1].copy()
+    for t in ts:
+        i0, i1, j0, j1 = _cell_box(P, t, s, cs)
+        for j in range(max(j0, cy0), min(j1, cy0 + cbh - 1) + 1):
+            for i in range(max(i0, cx0), min(i1, cx0 + cbw - 1) + 1):
+                c = (j - cy0) * cbw + i - cx0
+                items[at[c]] = t
+                at[c] += 1
+
+
+@njit(cache=True)
+def _tile_span(P, t, s, cs, nx, ny, cnx, cny, cpt, tpx, ntx, nty):
+    """the tiles of tpx pixels, cpt cells, that triangle t can reach: its box's pixels on the frame within APRON_PX of
+    a tile, or its cells on the grid within a cell of a tile's own: (a0, a1, b0, b1), inclusive, none where a0 > a1 or
+    b0 > b1"""
+    a0, a1, b0, b1 = ntx, -1, nty, -1
+    i0 = max(int(math.floor(min(P[t, 0, 0] * s, P[t, 1, 0] * s, P[t, 2, 0] * s) - 0.5)), 0)
+    i1 = min(int(math.ceil(max(P[t, 0, 0] * s, P[t, 1, 0] * s, P[t, 2, 0] * s) - 0.5)), nx - 1)
+    j0 = max(int(math.floor(min(P[t, 0, 1] * s, P[t, 1, 1] * s, P[t, 2, 1] * s) - 0.5)), 0)
+    j1 = min(int(math.ceil(max(P[t, 0, 1] * s, P[t, 1, 1] * s, P[t, 2, 1] * s) - 0.5)), ny - 1)
+    if i0 <= i1 and j0 <= j1:
+        a0, a1 = (i0 - APRON_PX) // tpx, (i1 + APRON_PX) // tpx
+        b0, b1 = (j0 - APRON_PX) // tpx, (j1 + APRON_PX) // tpx
+    i0, i1, j0, j1 = _cell_box(P, t, s, cs)
+    i0, i1, j0, j1 = max(i0, 0), min(i1, cnx - 1), max(j0, 0), min(j1, cny - 1)
+    if i0 <= i1 and j0 <= j1:
+        a0, a1 = min(a0, (i0 - 1) // cpt), max(a1, (i1 + 1) // cpt)
+        b0, b1 = min(b0, (j0 - 1) // cpt), max(b1, (j1 + 1) // cpt)
+    return max(a0, 0), min(a1, ntx - 1), max(b0, 0), min(b1, nty - 1)
+
+
+@njit(cache=True)
+def _tile_count(P, use, s, cs, nx, ny, cnx, cny, cpt, tpx, ntx, nty, count):
+    """each used triangle counted in every tile it can reach"""
+    for t in range(P.shape[0]):
+        if not use[t]:
+            continue
+        a0, a1, b0, b1 = _tile_span(P, t, s, cs, nx, ny, cnx, cny, cpt, tpx, ntx, nty)
+        for b in range(b0, b1 + 1):
+            for a in range(a0, a1 + 1):
+                count[b * ntx + a] += 1
+
+
+@njit(cache=True)
+def _tile_fill(P, use, s, cs, nx, ny, cnx, cny, cpt, tpx, ntx, nty, start, items):
     at = start[:-1].copy()
     for t in range(P.shape[0]):
         if not use[t]:
             continue
-        i0 = int(math.floor(min(P[t, 0, 0], P[t, 1, 0], P[t, 2, 0]) * s / cs))
-        i1 = int(math.floor(max(P[t, 0, 0], P[t, 1, 0], P[t, 2, 0]) * s / cs))
-        j0 = int(math.floor(min(P[t, 0, 1], P[t, 1, 1], P[t, 2, 1]) * s / cs))
-        j1 = int(math.floor(max(P[t, 0, 1], P[t, 1, 1], P[t, 2, 1]) * s / cs))
-        if i1 < 0 or j1 < 0 or i0 >= cnx or j0 >= cny:
-            continue
-        for j in range(max(j0, 0), min(j1, cny - 1) + 1):
-            for i in range(max(i0, 0), min(i1, cnx - 1) + 1):
-                c = j * cnx + i
-                items[at[c]] = t
-                at[c] += 1
+        a0, a1, b0, b1 = _tile_span(P, t, s, cs, nx, ny, cnx, cny, cpt, tpx, ntx, nty)
+        for b in range(b0, b1 + 1):
+            for a in range(a0, a1 + 1):
+                items[at[b * ntx + a]] = t
+                at[b * ntx + a] += 1
+
+
+@njit(cache=True)
+def _tile_of(x, y, s, nx, ny, cnx, cny, cs, tpx, ntx):
+    """the tile a point is queried in, that of the pixel its queries centre on, clamped to the frame (nx x ny pixels,
+    cnx x cny cells of cs), and that pixel: (tile, i, j), the tile -1 for a point whose 3 x 3 pixels are off the frame
+    and whose cell is off the grid, which reads nothing"""
+    i = int(math.floor(x * s))
+    j = int(math.floor(y * s))
+    if (i < -1 or j < -1 or i > nx or j > ny) and (i < 0 or j < 0 or i >= cnx * cs or j >= cny * cs):
+        return -1, i, j
+    i, j = min(max(i, 0), nx - 1), min(max(j, 0), ny - 1)
+    return j // tpx * ntx + i // tpx, i, j
+
+
+@njit(cache=True)
+def _tile_counts(X, Y, s, nx, ny, cnx, cny, cs, tpx, ntx, count):
+    """the points X, Y queried in each tile c, in count[c + 1]; those that read nothing in count[0]"""
+    for q in range(X.shape[0]):
+        count[_tile_of(X[q], Y[q], s, nx, ny, cnx, cny, cs, tpx, ntx)[0] + 1] += 1
 
 
 @njit(cache=True)
@@ -237,14 +341,15 @@ def _better(zt, fc, bz, bf, tie):
 
 
 @njit(cache=True)
-def _nearest(P, persp, s, cs, cnx, cny, start, items, x, y, tie):
-    """the triangle nearest the camera covering (x, y), of all those in its cell: (t or -1, depth, facing)"""
+def _nearest(P, persp, s, cs, cnx, cny, start, items, cx0, cy0, cbw, x, y, tie):
+    """the triangle nearest the camera covering (x, y), of all those in its cell: (t or -1, depth, facing); the cells
+    held are a block cbw cells wide from cell (cx0, cy0) of the frame's cnx x cny"""
     ci = int(math.floor(x * s / cs))
     cj = int(math.floor(y * s / cs))
     best, bz, bf = -1, -np.inf, 1
-    if ci < 0 or cj < 0 or ci >= cnx or cj >= cny:
+    if ci < 0 or cj < 0 or ci >= cnx or cj >= cny or items.shape[0] == 0:
         return best, bz, bf
-    c = cj * cnx + ci
+    c = (cj - cy0) * cbw + ci - cx0
     for q in range(start[c], start[c + 1]):
         zt, fc = _covers(P, items[q], x, y, persp)
         if zt > -np.inf and (best < 0 or _better(zt, fc, bz, bf, tie)):
@@ -253,22 +358,23 @@ def _nearest(P, persp, s, cs, cnx, cny, start, items, x, y, tie):
 
 
 @njit(cache=True)
-def _exact(tri, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta, tol_a, tol_b, planes, cs, cnx, cny, start, items,
-           x, y, z):
+def _exact(tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta, tol_a, tol_b,
+           planes, cs, cnx, cny, x, y, z):
     """is the point seen, against the nearest triangle covering it: of those the 3 x 3 pixels round it hold, or, where
     one of them would hide it but does not reach it (an edge of something in front is near: a face folded over
-    another, a sliver), of all those in its cell"""
+    another, a sliver), of all those in its cell. tri holds the frame's pixels from (ox, oy) on that any triangle
+    reaches round the point"""
     tol = tol_a + tol_b * abs(z)
     oc = _on_plane(x, y, z, planes, persp, hx, hy, f, L, sy, tol)
-    ny, nx = tri.shape
-    i = int(math.floor(x * s))
-    j = int(math.floor(y * s))
+    h, w = tri.shape
+    i = int(math.floor(x * s)) - ox
+    j = int(math.floor(y * s)) - oy
     best, bz, bf = -1, -np.inf, 1
     edge = False
     for dj in range(-1, 2):
         for di in range(-1, 2):
             ii, jj = i + di, j + dj
-            if ii < 0 or jj < 0 or ii >= nx or jj >= ny:
+            if ii < 0 or jj < 0 or ii >= w or jj >= h:
                 continue
             t = tri[jj, ii]
             if t < 0 or t == best:
@@ -280,33 +386,38 @@ def _exact(tri, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta, tol_a, tol_b
             elif not edge and not _sees(t, fc, x, y, z, P, tri_o, cap_o, persp, hx, hy, f, L, sy, delta, tol, oc):
                 edge = True
     if edge:
-        best, bz, bf = _nearest(P, persp, s, cs, cnx, cny, start, items, x, y, delta)
+        best, bz, bf = _nearest(P, persp, s, cs, cnx, cny, start, items, cx0, cy0, cbw, x, y, delta)
     if best < 0:
         return True
     return _sees(best, bf, x, y, z, P, tri_o, cap_o, persp, hx, hy, f, L, sy, delta, tol, oc)
 
 
 @njit(cache=True, parallel=True)
-def _exact_all(tri, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta, tol_a, tol_b, planes, cs, cnx, cny, start, items,
-               X, Y, Z, out):
+def _exact_all(c, tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta, tol_a,
+               tol_b, planes, cs, cnx, cny, nx, ny, tpx, ntx, X, Y, Z, out):
+    """_exact for the points queried in tile c"""
     for q in prange(X.shape[0]):
-        out[q] = _exact(tri, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta, tol_a, tol_b, planes, cs, cnx, cny,
-                        start, items, X[q], Y[q], Z[q])
+        if _tile_of(X[q], Y[q], s, nx, ny, cnx, cny, cs, tpx, ntx)[0] == c:
+            out[q] = _exact(tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta,
+                            tol_a, tol_b, planes, cs, cnx, cny, X[q], Y[q], Z[q])
 
 
 @njit(cache=True)
-def _front_all(tri, P, persp, s, cs, cnx, cny, start, items, delta, X, Y, out):
-    """the triangle nearest the camera covering each point, as _exact finds it, -1 for none"""
-    ny, nx = tri.shape
+def _front_all(c, tri, ox, oy, start, items, cx0, cy0, cbw, P, persp, s, cs, cnx, cny, nx, ny, tpx, ntx, delta, X, Y,
+               out):
+    """the triangle nearest the camera covering each point queried in tile c, as _exact finds it, -1 for none"""
+    h, w = tri.shape
     for q in range(X.shape[0]):
+        if _tile_of(X[q], Y[q], s, nx, ny, cnx, cny, cs, tpx, ntx)[0] != c:
+            continue
         x, y = X[q], Y[q]
-        i = int(math.floor(x * s))
-        j = int(math.floor(y * s))
+        i = int(math.floor(x * s)) - ox
+        j = int(math.floor(y * s)) - oy
         best, bz, bf = -1, -np.inf, 1
         for dj in range(-1, 2):
             for di in range(-1, 2):
                 ii, jj = i + di, j + dj
-                if ii < 0 or jj < 0 or ii >= nx or jj >= ny:
+                if ii < 0 or jj < 0 or ii >= w or jj >= h:
                     continue
                 t = tri[jj, ii]
                 if t < 0 or t == best:
@@ -315,17 +426,17 @@ def _front_all(tri, P, persp, s, cs, cnx, cny, start, items, delta, X, Y, out):
                 if zt > -np.inf and (best < 0 or _better(zt, fc, bz, bf, delta)):
                     best, bz, bf = t, zt, fc
         if best < 0:
-            best, bz, bf = _nearest(P, persp, s, cs, cnx, cny, start, items, x, y, delta)
+            best, bz, bf = _nearest(P, persp, s, cs, cnx, cny, start, items, cx0, cy0, cbw, x, y, delta)
         out[q] = best
 
 
 @njit(cache=True)
-def _front_cell_all(P, persp, s, cs, cnx, cny, start, items, delta, X, Y, out):
-    """the triangle nearest the camera covering each point of all those in its cell, the pixels not consulted: a
-    triangle narrower than a pixel that wins none of them is found too"""
+def _front_cell_all(c, start, items, cx0, cy0, cbw, P, persp, s, cs, cnx, cny, nx, ny, tpx, ntx, delta, X, Y, out):
+    """the triangle nearest the camera covering each point queried in tile c of all those in its cell, the pixels not
+    consulted: a triangle narrower than a pixel that wins none of them is found too"""
     for q in range(X.shape[0]):
-        best, bz, bf = _nearest(P, persp, s, cs, cnx, cny, start, items, X[q], Y[q], delta)
-        out[q] = best
+        if _tile_of(X[q], Y[q], s, nx, ny, cnx, cny, cs, tpx, ntx)[0] == c:
+            out[q] = _nearest(P, persp, s, cs, cnx, cny, start, items, cx0, cy0, cbw, X[q], Y[q], delta)[0]
 
 
 @njit(cache=True)
@@ -342,39 +453,82 @@ def _sees_given(T, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta, tol_a, to
 
 
 @njit(cache=True)
-def _halve(tri, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta, tol_a, tol_b, planes, cs, cnx, cny, start, items,
-           A, B, tk, tl, cell, out):
-    """for each piece A -> B (frame x, y, camera z), the point between parameters tk (seen) and tl (not) where it
-    turns, by halving: the last parameter seen; where cell is set, each point judged against every triangle in its
-    cell, as a sample between an outline's crossings was"""
+def _along(A, B, e, m, persp):
+    """the point at parameter m on piece e, A -> B (frame x, y, camera z)"""
+    x = A[e, 0] + m * (B[e, 0] - A[e, 0])
+    y = A[e, 1] + m * (B[e, 1] - A[e, 1])
+    if persp:
+        z = 1.0 / ((1.0 - m) / A[e, 2] + m / B[e, 2])
+    else:
+        z = A[e, 2] + m * (B[e, 2] - A[e, 2])
+    return x, y, z
+
+
+@njit(cache=True)
+def _halve_counts(A, B, ta, tb, it, persp, s, nx, ny, cnx, cny, cs, tpx, ntx, count):
+    """the pieces still halving whose next point is queried in each tile c, in count[c + 1]; those whose next point
+    reads nothing in count[0]"""
     for e in range(A.shape[0]):
-        a, b = tk[e], tl[e]
-        for _ in range(HALVINGS):
+        if it[e] < HALVINGS:
+            x, y, z = _along(A, B, e, 0.5 * (ta[e] + tb[e]), persp)
+            count[_tile_of(x, y, s, nx, ny, cnx, cny, cs, tpx, ntx)[0] + 1] += 1
+
+
+@njit(cache=True)
+def _halve(c, q0, q1, r0, r1, tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s,
+           delta, tol_a, tol_b, planes, cs, cnx, cny, nx, ny, tpx, ntx, A, B, ta, tb, it, cell, out):
+    """for each piece A -> B (frame x, y, camera z) whose next point is queried in tile c, the point between parameters
+    ta (seen) and tb (not) where it turns, by halving: the last parameter seen, in out once it[e], the halvings done,
+    reaches HALVINGS. The tile goes on with a piece while its point centres on a pixel in q0..q1 x r0..r1 or reads
+    nothing, and leaves it at the next point for the tile that holds it; where cell is set, each point is judged against
+    every triangle in its cell, as a sample between an outline's crossings was"""
+    for e in range(A.shape[0]):
+        if it[e] >= HALVINGS:
+            continue
+        a, b = ta[e], tb[e]
+        x, y, z = _along(A, B, e, 0.5 * (a + b), persp)
+        if _tile_of(x, y, s, nx, ny, cnx, cny, cs, tpx, ntx)[0] != c:
+            continue
+        while it[e] < HALVINGS:
             m = 0.5 * (a + b)
-            x = A[e, 0] + m * (B[e, 0] - A[e, 0])
-            y = A[e, 1] + m * (B[e, 1] - A[e, 1])
-            if persp:
-                z = 1.0 / ((1.0 - m) / A[e, 2] + m / B[e, 2])
-            else:
-                z = A[e, 2] + m * (B[e, 2] - A[e, 2])
+            x, y, z = _along(A, B, e, m, persp)
+            k, i, j = _tile_of(x, y, s, nx, ny, cnx, cny, cs, tpx, ntx)
+            if k >= 0 and not (q0 <= i <= q1 and r0 <= j <= r1):
+                break
             if cell[e]:
-                t, zt, fc = _nearest(P, persp, s, cs, cnx, cny, start, items, x, y, delta)
+                t, zt, fc = _nearest(P, persp, s, cs, cnx, cny, start, items, cx0, cy0, cbw, x, y, delta)
                 tol = tol_a + tol_b * abs(z)
                 ok = t < 0 or _sees(t, fc, x, y, z, P, tri_o, cap_o, persp, hx, hy, f, L, sy, delta, tol,
                                     _on_plane(x, y, z, planes, persp, hx, hy, f, L, sy, tol))
             else:
-                ok = _exact(tri, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta, tol_a, tol_b, planes, cs, cnx, cny,
-                            start, items, x, y, z)
+                ok = _exact(tri, ox, oy, start, items, cx0, cy0, cbw, P, tri_o, cap_o, persp, hx, hy, f, L, sy, s, delta,
+                            tol_a, tol_b, planes, cs, cnx, cny, x, y, z)
             if ok:
                 a = m
             else:
                 b = m
-        out[e] = a
+            it[e] += 1
+        ta[e], tb[e] = a, b
+        if it[e] >= HALVINGS:
+            out[e] = a
+
+
+def _f64(a):
+    return np.ascontiguousarray(a, dtype=np.float64)
+
+
+# a tile with no triangle: (tri, ox, oy, start, items, cx0, cy0, cbw) as Buffer._tile gives them
+_NONE = (np.full((0, 0), -1, dtype=np.int32), 0, 0, np.zeros(1, dtype=np.int64), np.zeros(0, dtype=np.int32), 0, 0, 0)
 
 
 class Buffer:
-    """the frame rasterized: tri (ny x nx, or 0 x 0 where no triangle hides), the index into P of the triangle nearest
-    the camera at each pixel centre, -1 for none, row j the page's y from j / R_PX to (j + 1) / R_PX pt from its foot.
+    """the frame rasterized a tile at a time: at each pixel centre the index into P of the triangle nearest the camera,
+    -1 for none, row j the page's y from j / R_PX to (j + 1) / R_PX pt from its foot, column i its x. The tiles are
+    squares of the frame's pixels, TILE_PX a side to a whole number of cells; each is rasterized over as much of itself
+    and the APRON_PX pixels round it as its triangles reach, with its cells and those round it, so a pixel keeps its
+    centre, its edge rule and its depth comparison. A point is queried in the tile of the pixel it centres on, clamped
+    to the frame, and a halving goes on in the next tile where its point leaves one, so every query answers as one
+    raster of the frame would. Tiles are kept for the next query while they come to TILE_CACHE bytes.
       P       the triangles (m x 3 x 3), frame x and y with z, or 1 / z in a perspective; tri_o each one's object
       use     the triangles that hide
       view    (hx, hy, f, L, sy): the frame's half width and height, the true-length factor, a perspective's focal
@@ -384,7 +538,9 @@ class Buffer:
       tol_pt  the tolerance square to the surface, on the page; err a length added to it in camera units (the
               meshes' float32 rounding)
       planes  the clip planes in camera space, rows of unit normal and offset
-      cap_o   per object: a closed solid whose back faces stand for its missing cut face"""
+      cap_o   per object: a closed solid whose back faces stand for its missing cut face
+    px is the raster at a pixel centre a point, which the depth bands read: pixel (n // 2 + n p, n // 2 + n q), n R_PX
+    rounded, at px[q - px_at[1], p - px_at[0]], over the box of the pixels the triangles reach"""
 
     def __init__(self, P, tri_o, use, persp, view, k, W, H, delta, tol_pt, err, planes, cap_o):
         self.P = np.ascontiguousarray(P, dtype=np.float64)
@@ -399,24 +555,48 @@ class Buffer:
         self.planes = np.ascontiguousarray(np.reshape(planes, (-1, 4)), dtype=np.float64)
         self.cap_o = np.ascontiguousarray(cap_o, dtype=np.bool_)
         use = np.ascontiguousarray(use, dtype=np.bool_)
-        # 16 pixels a square point of page, 4 bytes each here and 8 in _raster's depth: 192 bytes while rasterizing.
-        # Where nothing hides it is 0 x 0, and every query finds no triangle at any pixel, as on a raster all -1
-        shape = (int(math.ceil(H * R_PX)), int(math.ceil(W * R_PX))) if use.any() else (0, 0)
-        self.tri = np.full(shape, -1, dtype=np.int32)
-        _raster(self.P, use, self.persp, self.s, self.tri)
+        # 16 pixels a square point of page; a tile's raster is 4 bytes a pixel, and 8 more in _raster's depth while it
+        # runs, 0.2 GB for a whole tile
+        self.nx, self.ny = int(math.ceil(W * R_PX)), int(math.ceil(H * R_PX))
         self.cs = float(CELL_PX)                       # the triangles by cells of cs pixels, for the exact query
         while True:
-            self.cnx = int(math.ceil(self.tri.shape[1] / self.cs))
-            self.cny = int(math.ceil(self.tri.shape[0] / self.cs))
-            count = np.zeros(self.cnx * self.cny, dtype=np.int64)
-            _bin_count(self.P, use, self.s, self.cs, self.cnx, self.cny, count)
-            if count.sum() <= CELL_ITEMS or self.cs >= 1024:
+            self.cnx = int(math.ceil(self.nx / self.cs))
+            self.cny = int(math.ceil(self.ny / self.cs))
+            if _bin_total(self.P, use, self.s, self.cs, self.cnx, self.cny) <= CELL_ITEMS or self.cs >= 1024:
                 break
             self.cs *= 2
-        self.start = np.zeros(len(count) + 1, dtype=np.int64)
-        np.cumsum(count, out=self.start[1:])
-        self.items = np.zeros(int(self.start[-1]), dtype=np.int32)
-        _bin_fill(self.P, use, self.s, self.cs, self.cnx, self.cny, self.start, self.items)
+        self.cpt = max(1, TILE_PX // int(self.cs))     # cells a tile's side
+        self.tpx = self.cpt * int(self.cs)
+        self.ntx, self.nty = -(-self.nx // self.tpx), -(-self.ny // self.tpx)
+        span = (self.s, self.cs, self.nx, self.ny, self.cnx, self.cny, self.cpt, self.tpx, self.ntx, self.nty)
+        count = np.zeros(self.ntx * self.nty, dtype=np.int64)
+        _tile_count(self.P, use, *span, count)
+        self.tstart = np.zeros(len(count) + 1, dtype=np.int64)
+        np.cumsum(count, out=self.tstart[1:])
+        self.titems = np.zeros(int(self.tstart[-1]), dtype=np.int32)
+        _tile_fill(self.P, use, *span, self.tstart, self.titems)
+        self.cache, self.held, self.made = OrderedDict(), 0, 0     # tiles kept, their bytes, tiles rasterized
+        self.depth = None                              # _raster's depth, kept while a tile may be rasterized again
+        n = max(1, int(round(R_PX)))
+        i0, i1, j0, j1 = self.nx, 0, self.ny, 0         # the pixels the triangles reach, each tile's within it
+        for c in range(len(count)):
+            if count[c]:
+                x0, y0 = c % self.ntx * self.tpx, c // self.ntx * self.tpx
+                w = _window(self.P, self.titems[self.tstart[c]:self.tstart[c + 1]], self.s, x0,
+                            min(x0 + self.tpx, self.nx), y0, min(y0 + self.tpx, self.ny))
+                if w[0] < w[1] and w[2] < w[3]:
+                    i0, i1, j0, j1 = min(i0, w[0]), max(i1, w[1]), min(j0, w[2]), max(j1, w[3])
+        p0, p1 = max(-(-(i0 - n // 2) // n), 0), max(-(-(i1 - n // 2) // n), 0)
+        q0, q1 = max(-(-(j0 - n // 2) // n), 0), max(-(-(j1 - n // 2) // n), 0)
+        self.px_at = (p0, q0)
+        self.px = np.full((q1 - q0, p1 - p0) if p1 > p0 and q1 > q0 else (0, 0), -1, dtype=np.int32)
+        for c in range(len(count) if self.px.size else 0):
+            if count[c]:
+                x0, y0 = c % self.ntx * self.tpx, c // self.ntx * self.tpx
+                _px_fill(*self._tile(c)[:3], x0, min(x0 + self.tpx, self.nx), y0, min(y0 + self.tpx, self.ny), n,
+                         self.px, p0, q0)
+        if len(self.cache) == int((count > 0).sum()):
+            self.depth = None
 
     def tols(self, tol_pt):
         """the tolerance square to the surface, tol_pt on the page, as the exact query takes it: (tol_a, tol_b)"""
@@ -424,53 +604,136 @@ class Buffer:
             return self.err, float(tol_pt) / (self.k * self.L)
         return float(tol_pt) / (self.k * self.f) + self.err, 0.0
 
-    def _args(self):
-        return (self.P, self.tri_o, self.cap_o, self.persp, self.hx, self.hy, self.f, self.L, self.sy, self.s,
-                self.delta, self.tol_a, self.tol_b, self.planes, self.cs, self.cnx, self.cny, self.start, self.items)
+    def _tile(self, c):
+        """tile c rasterized, with its cells: (tri, ox, oy, start, items, cx0, cy0, cbw), tri the frame's pixels from
+        (ox, oy) on that its triangles reach, start and items the triangles of each cell (as _bin_fill fills them) of
+        a block cbw cells wide from cell (cx0, cy0)"""
+        if c in self.cache:
+            self.cache.move_to_end(c)
+            return self.cache[c]
+        ts = self.titems[self.tstart[c]:self.tstart[c + 1]]
+        a, b = c % self.ntx, c // self.ntx
+        x0, y0 = a * self.tpx, b * self.tpx
+        i0, i1, j0, j1 = _window(self.P, ts, self.s, max(x0 - APRON_PX, 0), min(x0 + self.tpx + APRON_PX, self.nx),
+                                 max(y0 - APRON_PX, 0), min(y0 + self.tpx + APRON_PX, self.ny))
+        shape = (j1 - j0, i1 - i0) if i1 > i0 and j1 > j0 else (0, 0)
+        self._room(4 * shape[0] * shape[1])
+        tri = np.full(shape, -1, dtype=np.int32)
+        if self.depth is None:                         # for the largest window a tile can have
+            self.depth = np.empty(min(self.tpx + 2 * APRON_PX, self.nx) * min(self.tpx + 2 * APRON_PX, self.ny))
+        _raster(self.P, ts, self.persp, self.s, tri, i0, j0, self.depth[:tri.size].reshape(shape))
+        cx0, cy0 = max(a * self.cpt - 1, 0), max(b * self.cpt - 1, 0)
+        cbw, cbh = min((a + 1) * self.cpt + 1, self.cnx) - cx0, min((b + 1) * self.cpt + 1, self.cny) - cy0
+        count = np.zeros(cbw * cbh, dtype=np.int64)
+        _bin_count(self.P, ts, self.s, self.cs, cx0, cy0, cbw, cbh, count)
+        start = np.zeros(len(count) + 1, dtype=np.int64)
+        np.cumsum(count, out=start[1:])
+        del count
+        items = np.zeros(int(start[-1]), dtype=np.int32)
+        _bin_fill(self.P, ts, self.s, self.cs, cx0, cy0, cbw, cbh, start, items)
+        tile = (tri, i0, j0, start, items, cx0, cy0, cbw)
+        self.made += 1
+        self._room(tri.nbytes + start.nbytes + items.nbytes)
+        self.cache[c] = tile
+        self.held += tri.nbytes + start.nbytes + items.nbytes
+        return tile
+
+    def _room(self, nbytes):
+        """the tiles kept let go, the longest unused first, till nbytes more come within TILE_CACHE"""
+        while self.cache and self.held + nbytes > TILE_CACHE:
+            t = self.cache.popitem(last=False)[1]
+            self.held -= t[0].nbytes + t[3].nbytes + t[4].nbytes
+
+    def _each(self, count, run):
+        """run(c, tile) for each tile c with points to query (count[c + 1]), those kept first, and then for the points
+        that read nothing (c -1) with no tile"""
+        for c in sorted((c for c in range(len(count) - 1) if count[c + 1]), key=lambda c: c not in self.cache):
+            run(c, self._tile(c) if self.tstart[c + 1] > self.tstart[c] else _NONE)
+        if count[0]:
+            run(-1, _NONE)
+
+    def _grid(self):
+        return self.s, self.nx, self.ny, self.cnx, self.cny, self.cs, self.tpx, self.ntx
+
+    def _count(self, X, Y):
+        count = np.zeros(self.ntx * self.nty + 1, dtype=np.int64)
+        _tile_counts(X, Y, *self._grid(), count)
+        return count
+
+    def raster(self):
+        """the frame's whole raster (ny x nx) from the tiles"""
+        out = np.full((self.ny, self.nx), -1, dtype=np.int32)
+        for c in range(self.ntx * self.nty):
+            if self.tstart[c + 1] > self.tstart[c]:
+                tri, ox, oy = self._tile(c)[:3]
+                x0, y0 = c % self.ntx * self.tpx, c // self.ntx * self.tpx
+                a0, a1 = max(x0, ox), min(x0 + self.tpx, ox + tri.shape[1])
+                b0, b1 = max(y0, oy), min(y0 + self.tpx, oy + tri.shape[0])
+                if a1 > a0 and b1 > b0:
+                    out[b0:b1, a0:a1] = tri[b0 - oy:b1 - oy, a0 - ox:a1 - ox]
+        return out
 
     def seen(self, X, Y, Z, tol_pt=None):
         """each point seen (_exact), within tol_pt square to the surface where given, else the buffer's"""
         out = np.zeros(len(X), dtype=np.bool_)
-        f64 = lambda a: np.ascontiguousarray(a, dtype=np.float64)
-        a = self._args()
-        if tol_pt is not None:
-            a = a[:11] + self.tols(tol_pt) + a[13:]
-        _exact_all(self.tri, *a, f64(X), f64(Y), f64(Z), out)
+        X, Y, Z = _f64(X), _f64(Y), _f64(Z)
+        tol = (self.tol_a, self.tol_b) if tol_pt is None else self.tols(tol_pt)
+        self._each(self._count(X, Y), lambda c, T: _exact_all(
+            c, *T, self.P, self.tri_o, self.cap_o, self.persp, self.hx, self.hy, self.f, self.L, self.sy, self.s,
+            self.delta, *tol, self.planes, self.cs, self.cnx, self.cny, self.nx, self.ny, self.tpx, self.ntx, X, Y, Z,
+            out))
         return out
 
     def front(self, X, Y):
         """the triangle nearest the camera over each point (an index into P, -1 for none): what hides a point the
         buffer does not see"""
         out = np.full(len(X), -1, dtype=np.int64)
-        f64 = lambda a: np.ascontiguousarray(a, dtype=np.float64)
-        _front_all(self.tri, self.P, self.persp, self.s, self.cs, self.cnx, self.cny, self.start, self.items, self.delta,
-                   f64(X), f64(Y), out)
+        X, Y = _f64(X), _f64(Y)
+        self._each(self._count(X, Y), lambda c, T: _front_all(
+            c, *T, self.P, self.persp, self.s, self.cs, self.cnx, self.cny, self.nx, self.ny, self.tpx, self.ntx,
+            self.delta, X, Y, out))
         return out
 
     def front_cell(self, X, Y):
         """the triangle nearest the camera over each point of all those in its cell (-1 for none), however narrow"""
         out = np.full(len(X), -1, dtype=np.int64)
-        f64 = lambda a: np.ascontiguousarray(a, dtype=np.float64)
-        _front_cell_all(self.P, self.persp, self.s, self.cs, self.cnx, self.cny, self.start, self.items, self.delta,
-                        f64(X), f64(Y), out)
+        X, Y = _f64(X), _f64(Y)
+        self._each(self._count(X, Y), lambda c, T: _front_cell_all(
+            c, *T[3:], self.P, self.persp, self.s, self.cs, self.cnx, self.cny, self.nx, self.ny, self.tpx, self.ntx,
+            self.delta, X, Y, out))
         return out
 
     def sees(self, T, X, Y, Z):
         """each point seen past the triangle T given for it (-1 for none) by the same rules: a check of the buffer
         against an exact query of the nearest triangle"""
         out = np.zeros(len(X), dtype=np.bool_)
-        f64 = lambda a: np.ascontiguousarray(a, dtype=np.float64)
-        _sees_given(np.ascontiguousarray(T, dtype=np.int64), *self._args()[:14], f64(X), f64(Y), f64(Z), out)
+        _sees_given(np.ascontiguousarray(T, dtype=np.int64), self.P, self.tri_o, self.cap_o, self.persp, self.hx,
+                    self.hy, self.f, self.L, self.sy, self.s, self.delta, self.tol_a, self.tol_b, self.planes,
+                    _f64(X), _f64(Y), _f64(Z), out)
         return out
 
     def halve(self, A, B, tk, tl, cell=None):
         """the last parameter seen between tk and tl on each piece A -> B (n x 3); where cell is set, against every
         triangle in each point's cell"""
         out = np.zeros(len(A), dtype=np.float64)
-        f64 = lambda a: np.ascontiguousarray(a, dtype=np.float64)
+        A, B = _f64(A), _f64(B)
+        ta, tb = np.array(tk, dtype=np.float64), np.array(tl, dtype=np.float64)   # each piece's halving so far
+        it = np.zeros(len(A), dtype=np.int64)
         cell = np.zeros(len(A), dtype=np.bool_) if cell is None else np.ascontiguousarray(cell, dtype=np.bool_)
-        _halve(self.tri, *self._args(), f64(A), f64(B), f64(tk), f64(tl), cell, out)
-        return out
+        m = APRON_PX - 1                               # a point centred this far past a tile's pixels is held in it
+
+        def run(c, T):
+            x0, y0 = c % self.ntx * self.tpx, c // self.ntx * self.tpx
+            q = (x0 - m, x0 + self.tpx - 1 + m, y0 - m, y0 + self.tpx - 1 + m) if c >= 0 else (0, -1, 0, -1)
+            _halve(c, *q, *T, self.P, self.tri_o, self.cap_o, self.persp, self.hx, self.hy, self.f, self.L, self.sy,
+                   self.s, self.delta, self.tol_a, self.tol_b, self.planes, self.cs, self.cnx, self.cny, self.nx,
+                   self.ny, self.tpx, self.ntx, A, B, ta, tb, it, cell, out)
+        while True:
+            count = np.zeros(self.ntx * self.nty + 1, dtype=np.int64)
+            _halve_counts(A, B, ta, tb, it, self.persp, *self._grid(), count)
+            if not count.any():
+                return out
+            self._each(count, run)
 
 
 # ---------------------------------------------------------------- lines against it

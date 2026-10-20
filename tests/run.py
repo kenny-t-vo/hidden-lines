@@ -225,6 +225,15 @@ def export_mesh_tests():
 
 export_script = KIT / 'rhino' / 'hidden_lines.py'
 export_cache = load_hidden_lines(export_script)
+# a planar face with no outer loop, as an invalid brep can hold (reported from a model on 20 October 2026), is left
+# out of the faces the model check compares, without stopping the export; the brep's fault is listed as invalid
+_face_ = lambda loop: types.SimpleNamespace(TryGetPlane=lambda mt: (True, types.SimpleNamespace(Flip=lambda: None)),
+                                            OuterLoop=loop, OrientationIsReversed=False, GetBoundingBox=lambda tight: 'box')
+_loop_ = types.SimpleNamespace(To3dCurve=lambda: 'outer')
+_pf_ = export_cache.planes_of_faces(dict(kind='brep', geom=types.SimpleNamespace(
+    Faces=[_face_(_loop_), _face_(None), _face_(types.SimpleNamespace(To3dCurve=lambda: None))])), 0.001)
+ok([e[1:] for e in _pf_] == [('outer', 'box')],
+   f'hidden-lines: a planar face with no outer loop, or one whose loop gives no curve, is skipped by the model check: {_pf_}')
 cache_key, cache_get, cache_put, cache_trim = [getattr(export_cache, name) for name in
                                              ('cache_key', 'cache_get', 'cache_put', 'cache_trim')]
 with tempfile.TemporaryDirectory() as td:

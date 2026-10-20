@@ -712,10 +712,11 @@ def planes_of_faces(o, mt):
         return out
     for f in o['geom'].Faces:
         ok, pl = f.TryGetPlane(mt)
-        if ok:
+        edge = f.OuterLoop.To3dCurve() if ok and f.OuterLoop is not None else None
+        if edge is not None:                           # a face with no outer loop: its brep is invalid, listed so
             if f.OrientationIsReversed:
                 pl.Flip()
-            out.append((pl, f.OuterLoop.To3dCurve(), f.GetBoundingBox(True)))
+            out.append((pl, edge, f.GetBoundingBox(True)))
     return out
 
 

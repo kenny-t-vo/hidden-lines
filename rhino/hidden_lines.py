@@ -2879,7 +2879,8 @@ def dialog(doc, vp):
     cols.Spacing = drawing.Size(16, 8)
     cols.AddRow(left, right)
     scroll = forms.Scrollable()
-    scroll.Border = getattr(forms.BorderType, 'None')
+    import System
+    scroll.Border = System.Enum.Parse(forms.BorderType, 'None')   # rhino 8's python has no attribute for a member named None
     scroll.ExpandContentWidth = True
     scroll.ExpandContentHeight = False
     scroll.Content = cols

@@ -3202,6 +3202,18 @@ except SystemExit as e_:
 # model's faults in plain words
 import fnmatch as fnm_
 import hl as hlc_
+ok(hlc_.fit_window(900, 650, 1440, 900) == (900, 650),
+   'hl: a window that fits the working area keeps its wanted size')
+ok(hlc_.fit_window(900, 1200, 1440, 900) == (900, 820),
+   'hl: a tall window leaves 80 below the working area height')
+ok(hlc_.fit_window(1800, 650, 1440, 900) == (1360, 650),
+   'hl: a wide window leaves 40 on each side of the working area')
+ok(hlc_.fit_window(900, 1200, 400, 300) == (400, 300),
+   'hl: a working area smaller than the minimum gets the area itself')
+ok(hlc_.fit_window(100, 100, 1440, 900) == hlc_.MIN_WINDOW == (560, 420),
+   'hl: a small wanted window is raised to the minimum size')
+ok(hlc_.fit_window(900, 1200, 600, 460) == hlc_.MIN_WINDOW,
+   'hl: the minimum takes precedence over margins when the area can hold it')
 hl_fit_items_ = [('ground', 'Ground', False), ('wall2', 'Walls', False), ('curve', 'Walls', True),
                  ('detail', 'Detail', False), ('skip', 'Notes', False), ('unknown', 'Other', False),
                  ('wall1', 'Walls', False), ('line', 'Lines', True)]

@@ -4,6 +4,15 @@ standard views and a frame round what is drawn, and a fault of the model said in
 rhino/hidden_lines.py's dialog reads it from beside itself; tests/run.py checks it (group hl)."""
 import errno, math, os, re, sys
 
+MIN_WINDOW = (560, 420)
+
+
+def fit_window(want_w, want_h, area_w, area_h):
+    """client size within the working area, with 40 a side and 80 total vertically where the minimum fits"""
+    return tuple(min(area, max(low, min(want, area - 80)))
+                 for want, area, low in zip((want_w, want_h), (area_w, area_h), MIN_WINDOW))
+
+
 ROLE_KEY = 'kit.hl.role'         # a layer's user text holding its role
 SKIP = 'skip'
 # key, as the dialog lists it, what it is for, its group in the request (None: not collected)

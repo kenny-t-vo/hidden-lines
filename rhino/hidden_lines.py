@@ -2117,6 +2117,7 @@ def dialog(doc, vp):
             x.TextAlignment = forms.TextAlignment.Left
         if hint:                                       # a line saying what the control above it does
             x.TextColor = drawing.SystemColors.DisabledText
+            x.Font = drawing.SystemFonts.Label(drawing.SystemFonts.Label().Size - 1)
             x.Width = 330
         return x
 
@@ -2426,16 +2427,26 @@ def dialog(doc, vp):
         if st['oversize']:
             dest.Text += ' ' + st['oversize']['say']
 
+    def fit(win, width=None):
+        screen = (win.Screen if win.Loaded else None) or getattr(Rhino.UI.RhinoEtoApp.MainWindow, 'Screen', None)
+        area = (screen or forms.Screen.PrimaryScreen).WorkingArea
+        win.MinimumSize = drawing.Size(int(min(hl.MIN_WINDOW[0], area.Width)),
+                                       int(min(hl.MIN_WINDOW[1], area.Height)))
+        px = win.Padding.Left + win.Padding.Right
+        py = win.Padding.Top + win.Padding.Bottom
+        s = win.Content.GetPreferredSize(drawing.SizeF(float(width - px) if width is not None else float('inf'),
+                                                       float('inf')))
+        w, h = hl.fit_window(width if width is not None else int(math.ceil(s.Width)) + px,
+                             int(math.ceil(s.Height)) + py, area.Width, area.Height)
+        win.ClientSize = drawing.Size(int(w), int(h))
+
     def show_save(*_):
         vis = bool(saves()) and not st['path']
         if save_label.Visible != vis:
             save_label.Visible = save_row.Visible = vis
             win = st.get('form') or dlg
-            if win.Loaded:                             # a shown window keeps its height: fitted again to the row
-                pad = win.Padding.Top + win.Padding.Bottom
-                s = win.Content.GetPreferredSize(drawing.SizeF(float(win.ClientSize.Width - win.Padding.Left -
-                                                                     win.Padding.Right), float('inf')))
-                win.ClientSize = drawing.Size(win.ClientSize.Width, int(math.ceil(s.Height)) + pad)
+            if win.Loaded:
+                fit(win, win.ClientSize.Width)
         say_dest()
 
     def refresh(*_):
@@ -2867,16 +2878,22 @@ def dialog(doc, vp):
     cols = forms.DynamicLayout()
     cols.Spacing = drawing.Size(16, 8)
     cols.AddRow(left, right)
+    scroll = forms.Scrollable()
+    scroll.Border = getattr(forms.BorderType, 'None')
+    scroll.ExpandContentWidth = True
+    scroll.ExpandContentHeight = False
+    scroll.Content = cols
     row = forms.DynamicLayout()
     row.Spacing = drawing.Size(8, 8)
     row.AddRow(msg, None, cancel, go)
     lay = forms.DynamicLayout()                  # each row its own cell, so the bottom lines set no column's width
     lay.Spacing = drawing.Size(8, 8)
-    lay.AddRow(cols)
+    lay.Add(scroll, True, True)
     lay.AddRow(dest)
     lay.AddRow(row)
     lay.AddRow(footer())
     dlg.Content = lay
+    fit(dlg)
     def finish():
         """the choices once Draw closed the dialog, the last of them and the layers' roles kept in the model"""
         req = st['built']
@@ -2924,6 +2941,7 @@ def dialog(doc, vp):
         dlg.Content = None
         f = st['form'] = forms.Form()
         f.Title, f.Padding, f.Resizable, f.Content = dlg.Title, dlg.Padding, True, lay
+        f.MinimumSize, f.ClientSize = dlg.MinimumSize, dlg.ClientSize
         dlg.Dispose()
         f.Owner = Rhino.UI.RhinoEtoApp.MainWindow
         f.Show()

@@ -3202,6 +3202,24 @@ except SystemExit as e_:
 # model's faults in plain words
 import fnmatch as fnm_
 import hl as hlc_
+hl_fit_items_ = [('ground', 'Ground', False), ('wall2', 'Walls', False), ('curve', 'Walls', True),
+                 ('detail', 'Detail', False), ('skip', 'Notes', False), ('unknown', 'Other', False),
+                 ('wall1', 'Walls', False), ('line', 'Lines', True)]
+hl_fit_roles_ = {'Ground': 'ground', 'Walls': 'building', 'Detail': 'detail', 'Notes': hlc_.SKIP, 'Lines': 'lines'}
+ok(hlc_.fit_ids(hl_fit_items_, hl_fit_roles_) == ['wall2', 'detail', 'wall1'],
+   'hl: a frame fits round the subject objects in their original order')
+ok(hlc_.fit_ids([('curve', 'Walls', True), ('ground', 'Ground', False)], hl_fit_roles_, ()) == ['ground'],
+   'hl: curves do not set a frame while another kind of object is kept')
+ok(hlc_.fit_ids([('skip', 'Notes', False), ('line', 'Lines', True)], hl_fit_roles_, ()) == ['line'],
+   'hl: skipped layers do not set a frame or keep curves from setting it')
+ok(hlc_.fit_ids(hl_fit_items_, hl_fit_roles_, ['wall2']) == ['detail', 'wall1'],
+   'hl: a left-out subject object does not set the frame')
+ok(hlc_.fit_ids(hl_fit_items_, hl_fit_roles_, ['wall2', 'detail', 'wall1', 'curve']) == ['ground', 'unknown'],
+   'hl: with every subject left out, the kept others set the frame')
+ok(hlc_.fit_ids(hl_fit_items_, hl_fit_roles_, [i_ for i_, _, curve_ in hl_fit_items_ if not curve_]) == ['curve'],
+   'hl: with every other kind left out, curves set the frame with subject roles preferred')
+ok(hlc_.fit_ids(hl_fit_items_, hl_fit_roles_, [i_ for i_, _, _ in hl_fit_items_]) == [],
+   'hl: everything left out gives no ids for the frame')
 hl_reach_ = [(str(d_), ((d_, -1, -1), (d_ + 2, 1, 1))) for d_ in (100, 224, 300)]
 ok(hlc_.within_reach(hl_reach_, 225, camera=(0, 0, 0)) == {'100', '224'},
    'hl: perspective reach keeps boxes at 100 and 224 m, leaving one at 300 m out at 225 m')

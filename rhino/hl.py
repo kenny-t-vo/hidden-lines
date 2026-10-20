@@ -171,6 +171,14 @@ VIEWS = (
 SUBJECT = ('building', 'detail', 'furniture', 'texture')   # the roles a frame fits round when any is drawn
 
 
+def fit_ids(items, roles, left_out=()):
+    """ids a frame fits round, in items' order: (id, layer path, is_curve), without skipped or left-out objects"""
+    left_out = set(left_out)
+    kept = [(i, roles.get(p), curve) for i, p, curve in items if roles.get(p) != SKIP and i not in left_out]
+    kept = [item for item in kept if not item[2]] or kept
+    return [i for i, role, _ in kept if role in SUBJECT] or [i for i, _, _ in kept]
+
+
 def _unit(v):
     n = math.sqrt(sum(x * x for x in v))
     return tuple(x / n for x in v)

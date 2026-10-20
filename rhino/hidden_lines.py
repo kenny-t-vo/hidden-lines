@@ -2105,7 +2105,8 @@ def dialog(doc, vp):
         last.pop('view')
     sel = drawable(doc, vp, True)
     skipped = left_out(doc)
-    st = dict(req=None, path=None, objs=None, rows=[], chosen={}, boxes={}, built=None, form=None, oversize=None)
+    st = dict(req=None, path=None, objs=None, rows=[], chosen={}, boxes={}, built=None, form=None, oversize=None,
+              left_out=set())
 
     def label(text='', wrap=False, left=False, hint=False):
         x = forms.Label()
@@ -2305,19 +2306,17 @@ def dialog(doc, vp):
         fill_rows()
         refresh()
 
-    def fit_points():
+    def fit_points(left_out=()):
         """the corners of what a frame fits round: the drawn objects of the subject's roles, or all drawn, curves
         only where nothing else is drawn"""
-        r = roles()
         crv = Rhino.DocObjects.ObjectType.Curve
-        objs = [(o, p) for o, p in st['objs'] if r.get(p) != hl.SKIP]
-        objs = [(o, p) for o, p in objs if o.ObjectType != crv] or objs        # curves alone do not set the frame
-        subj = [o for o, p in objs if r.get(p) in hl.SUBJECT] or [o for o, _ in objs]
+        ids = hl.fit_ids([(o.Id, p, o.ObjectType == crv) for o, p in st['objs']], roles(), left_out)
+        objs = {o.Id: o for o, _ in st['objs']}
         pts = []
-        for o in subj:
-            if o.Id not in st['boxes']:
-                st['boxes'][o.Id] = corners(o)
-            pts += st['boxes'][o.Id]
+        for i in ids:
+            if i not in st['boxes']:
+                st['boxes'][i] = corners(objs[i])
+            pts += st['boxes'][i]
         return pts
 
     def keys():
@@ -2325,6 +2324,7 @@ def dialog(doc, vp):
 
     def build(s=None):
         """the request the choices draw, or a reason it cannot be drawn"""
+        st['left_out'] = set()
         if not st['req']:
             r = roles()
             objs = [(o, p) for o, p in st['objs'] if r.get(p) != hl.SKIP]
@@ -2364,11 +2364,17 @@ def dialog(doc, vp):
                 plane = (planes[0][0].X, planes[0][0].Y, planes[0][0].Z) if planes else None
                 kept = hl.within_reach(boxes, float(reach.Value), camera=camera, direction=direction, plane=plane)
                 excluded = {i for i, _ in boxes} - kept
+                st['left_out'] = excluded
                 objs = [(o, p) for o, p in objs if o.Id not in excluded]
                 count_drawn(objs, len(excluded))
                 if not objs:
                     origin = 'camera' if camera is not None else 'section' if plane is not None else 'front'
                     return 'Nothing lies within {:g} {} of the {}.'.format(float(reach.Value), unit, origin)
+                if excluded and key.startswith(('std:', 'clip:')):
+                    refit = view_for(doc, vp, key, s, fit_points(excluded), st['req'])
+                    # a kept object spanning both section planes can have no corners between them
+                    if refit[0] is not None:
+                        v, fr, clip = refit
             ids = [str(o.Id) for o, _ in objs]
             req = hl.request_from(nm, s, dict((p, x) for p, x in r.items() if x != hl.SKIP), ids)
         req = weigh(hl.with_lines(req, bool(depth.Checked), bool(merge.Checked), bool(hidden.Checked)))
@@ -2623,7 +2629,9 @@ def dialog(doc, vp):
             return
         fr = st['built']['frame']
         if hl.frame_problem(fr['w_pt'], fr['h_pt']):            # one stray object far off makes a sheet of kilometres
-            boxes = [(o.Id, o.Geometry.GetBoundingBox(True).Center) for o, _ in st['objs']]
+            r = roles() if st['req'] is None else {}
+            boxes = [(o.Id, o.Geometry.GetBoundingBox(True).Center) for o, p in st['objs']
+                     if o.Id not in st['left_out'] and r.get(p) != hl.SKIP]
             far = hl.far_ones([(i, (c.X, c.Y, c.Z)) for i, c in boxes])
             doc.Objects.UnselectAll()
             for i in far:

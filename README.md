@@ -68,6 +68,8 @@ On Windows, nothing needs unblocking either. A package downloaded in a browser l
 7. To have the drawing as a file too, tick it under **Also save**: Illustrator (.ai), SVG or DXF, any or none. **Save files in** appears once one is ticked.
 8. Click **Draw**. The line above it says where the drawing goes.
 
+Under **Objects**, tick **Only within** and set a distance in the model's units to leave out objects wholly beyond it. In perspective, distance is measured from the camera to the nearest point of each object's bounding box. In a parallel view, it is measured along the view direction from the section plane, or from the front of the objects drawn when there is no section. A left-out object is neither drawn nor hides anything. The option is off by default and is unavailable when drawing from a request file.
+
 The drawing is added to the model under the layer `HL::NAME`, at the model's true size, its lower left corner at the world origin. Nothing else is saved unless you tick it under Also save. The files you tick go beside your model in a folder named `<model> HL`, one folder a drawing, with the run's `hl.log`: `NAME.ai` for Illustrator, `NAME.svg` for a browser or Inkscape, `NAME.dxf` for AutoCAD. A model you have not saved yet has them saved in Documents, in a folder named HL. HL remembers the ticks, in the model and for your next model.
 
 HL never saves your model. What it adds is in the open model: the drawing on its layer `HL::NAME`, the roles you set on the layers, and the dialog's remembered choices. On Windows they reach your file when you save it. On a Mac, Rhino saves a model's changes into its file as you work (macOS Auto Save), so they reach the file without you saving, as a Make2D drawing does. To undo them:

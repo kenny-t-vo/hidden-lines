@@ -117,6 +117,20 @@ def glob_escape(path):
 DEPTH_SHARE = (0.25, 0.6)
 
 
+def within_reach(boxes, reach, camera=None, direction=None, plane=None):
+    """ids whose boxes reach within reach model units of the camera, or along the unit direction from the section
+    plane's point or the boxes' front; boxes in front of the section are kept"""
+    if reach is None or reach <= 0:
+        return {i for i, _ in boxes}
+    if camera is not None:
+        return {i for i, (lo, hi) in boxes
+                if sum(max(lo[a] - camera[a], 0, camera[a] - hi[a]) ** 2 for a in range(3)) <= reach ** 2}
+    depths = [(i, sum(min(lo[a] * direction[a], hi[a] * direction[a]) for a in range(3)))
+              for i, (lo, hi) in boxes]
+    front = _dot(plane, direction) if plane is not None else min((d for _, d in depths), default=0)
+    return {i for i, d in depths if d - front <= reach}
+
+
 def request_from(name, scale, roles, objects=None, cut=None):
     """the request the dialog's choices draw, without its view: a group a role in ROLES' order holding the layers
     given it ({full path: role}), Leave out collecting nothing; objects, ids, the objects drawn; cut, the role whose

@@ -2133,6 +2133,19 @@ def dialog(doc, vp):
     cut_text = label(left=True)
     cut = forms.DropDown()
     count_text = label(left=True)
+    only_within = forms.CheckBox()
+    only_within.Text = 'Only within'
+    only_within.Checked = bool(last.get('only_within', settings().get('only_within', False)))
+    reach = forms.NumericStepper()
+    reach.MinValue = 0.1
+    reach.MaxValue = sys.float_info.max
+    reach.DecimalPlaces = 1
+    reach.Value = float(last.get('reach', settings().get('reach', 225)))
+    unit = {'Millimeters': 'mm', 'Centimeters': 'cm', 'Meters': 'm', 'Kilometers': 'km',
+            'Inches': 'in', 'Feet': 'ft', 'Yards': 'yd', 'Miles': 'mi'}.get(str(doc.ModelUnitSystem),
+                                                                        str(doc.ModelUnitSystem))
+    reach_say = label('Objects wholly further than this from the camera, or past the section or the front of the '
+                      'drawing in a parallel view, are left out: they are not drawn and hide nothing.', True, hint=True)
     weights = forms.DropDown()
     for _, lab in hl.WEIGHTS:
         weights.Items.Add(lab)
@@ -2242,6 +2255,17 @@ def dialog(doc, vp):
         """[(object, layer path)] the dialog's choice draws"""
         return sel if what.SelectedIndex == 0 and sel else drawable(doc, vp, False)
 
+    def count_drawn(objs, excluded=None):
+        paths = set(p for _, p in objs)
+        st['n'] = len(objs)
+        count_text.Text = '{:,} object{} on {} layer{} drawn'.format(len(objs), '' if len(objs) == 1 else 's',
+                                                                     len(paths), '' if len(paths) == 1 else 's')
+        if excluded is not None:
+            count_text.Text += '; {:,} further than {:g} {} left out'.format(excluded, float(reach.Value), unit)
+        if what.SelectedIndex == 0 and skipped:
+            count_text.Text += '; not drawn: ' + ', '.join('%d %s%s' % (n, k, '' if n == 1 else 'es' if k.endswith('h') else 's')
+                                                           for k, n in sorted(skipped.items()))
+
     def fill_rows():
         """the layers of what is drawn, with their roles: a row a top-level layer, or with Show sublayers a row a
         layer holding what is drawn"""
@@ -2265,13 +2289,7 @@ def dialog(doc, vp):
             st['rows'] = [forms.GridItem(t_, str(n), hl.LABEL[r], hl.why(h, d)) for t_, n, r, h, d in rows]
         grid.DataStore = st['rows']
         r_ = roles()
-        drawn_ = [p for _, p in objs if r_.get(p) != hl.SKIP]
-        st['n'] = len(drawn_)
-        count_text.Text = '{:,} object{} on {} layer{} drawn'.format(len(drawn_), '' if len(drawn_) == 1 else 's',
-                                                                     len(set(drawn_)), '' if len(set(drawn_)) == 1 else 's')
-        if what.SelectedIndex == 0 and skipped:
-            count_text.Text += '; not drawn: ' + ', '.join('%d %s%s' % (n, k, '' if n == 1 else 'es' if k.endswith('h') else 's')
-                                                           for k, n in sorted(skipped.items()))
+        count_drawn([(o, p) for o, p in objs if r_.get(p) != hl.SKIP])
 
     def roles():
         """{layer path: role} of the layers holding what is drawn"""
@@ -2306,6 +2324,10 @@ def dialog(doc, vp):
 
     def build(s=None):
         """the request the choices draw, or a reason it cannot be drawn"""
+        if not st['req']:
+            r = roles()
+            objs = [(o, p) for o, p in st['objs'] if r.get(p) != hl.SKIP]
+            count_drawn(objs)
         key = keys()[view.SelectedIndex] if view.SelectedIndex >= 0 else 'viewport'
         if key == 'request' and not st['req']:                # the list is being refilled after Clear
             key = 'viewport'
@@ -2321,10 +2343,32 @@ def dialog(doc, vp):
         if st['req']:
             req = dict(st['req'], id=nm, title=st['req'].get('title', nm), scale=s)
         else:
-            r = roles()
-            ids = [str(o.Id) for o, p in st['objs'] if r.get(p) != hl.SKIP]
-            if not ids:
+            if not objs:
                 return 'Every layer is left out: give one a role.'
+            if only_within.Checked:
+                boxes = []
+                for o, _ in objs:
+                    if o.Id not in st['boxes']:
+                        st['boxes'][o.Id] = corners(o)
+                    cs = st['boxes'][o.Id]
+                    if cs:
+                        boxes.append((o.Id, (tuple(min(c[a] for c in cs) for a in range(3)),
+                                              tuple(max(c[a] for c in cs) for a in range(3)))))
+                camera = v.get('camera') if v.get('lens_mm') else None
+                direction = G.Vector3d(*v['direction']) if camera is None else None
+                if direction is not None:
+                    direction.Unitize()
+                    direction = (direction.X, direction.Y, direction.Z)
+                planes = planes_of(dict(clip=clip))
+                plane = (planes[0][0].X, planes[0][0].Y, planes[0][0].Z) if planes else None
+                kept = hl.within_reach(boxes, float(reach.Value), camera=camera, direction=direction, plane=plane)
+                excluded = {i for i, _ in boxes} - kept
+                objs = [(o, p) for o, p in objs if o.Id not in excluded]
+                count_drawn(objs, len(excluded))
+                if not objs:
+                    origin = 'camera' if camera is not None else 'section' if plane is not None else 'front'
+                    return 'Nothing lies within {:g} {} of the {}.'.format(float(reach.Value), unit, origin)
+            ids = [str(o.Id) for o, _ in objs]
             req = hl.request_from(nm, s, dict((p, x) for p, x in r.items() if x != hl.SKIP), ids)
         req = weigh(hl.with_lines(req, bool(depth.Checked), bool(merge.Checked), bool(hidden.Checked)))
         req['view'], req['frame'] = v, fr
@@ -2388,6 +2432,8 @@ def dialog(doc, vp):
         say_dest()
 
     def refresh(*_):
+        only_within.Enabled = st['req'] is None
+        reach.Enabled = st['req'] is None and bool(only_within.Checked)
         mode = wkeys[weights.SelectedIndex]
         weights_say.Text = hl.WEIGHTS_SAY[mode]
         depth.Enabled = mode != 'single'
@@ -2716,8 +2762,10 @@ def dialog(doc, vp):
     fill_views()
     on_view()
     what.SelectedIndexChanged += on_what
-    subs.CheckedChanged += lambda s, e: fill_rows()
+    subs.CheckedChanged += lambda s, e: (fill_rows(), refresh())
     weights.SelectedIndexChanged += refresh
+    only_within.CheckedChanged += refresh
+    reach.ValueChanged += refresh
     depth.CheckedChanged += refresh
     merge.CheckedChanged += refresh
     hidden.CheckedChanged += refresh
@@ -2744,6 +2792,11 @@ def dialog(doc, vp):
     top.Spacing = drawing.Size(8, 8)
     top.AddRow(label('Objects'), what)
     top.AddRow(label(''), count_text)
+    reach_row = forms.DynamicLayout()
+    reach_row.Spacing = drawing.Size(6, 0)
+    reach_row.AddRow(only_within, reach, label(unit), None)
+    top.AddRow(label(''), reach_row)
+    top.AddRow(label(''), reach_say)
     top.AddRow(label('View'), view)
     top.AddRow(label('Scale 1:'), scale)
     top.AddRow(label('Name'), name)
@@ -2831,12 +2884,14 @@ def dialog(doc, vp):
                  cut=cut.Items[cut.SelectedIndex].Text if cut.SelectedIndex >= 0 else None,
                  weights=wkeys[weights.SelectedIndex], parent=parent.Text.strip(), out=outs, subs=bool(subs.Checked),
                  layer_tree=tree_keys[layer_tree.SelectedIndex], colours=bool(colours.Checked),
+                 only_within=bool(only_within.Checked), reach=float(reach.Value),
                  depth=last.get('depth', True) if st['path'] else bool(depth.Checked),
                  merge=last.get('merge', False) if st['path'] else bool(merge.Checked),
                  hidden=last.get('hidden', False) if st['path'] else bool(hidden.Checked),
                  save=[k for k, b_ in save_boxes if b_.Checked])
         doc.Strings.SetString(SECTION, 'last', json.dumps(o))
-        save_settings(weights=o['weights'], save=o['save'], layer_tree=o['layer_tree'], colours=o['colours'])
+        save_settings(weights=o['weights'], save=o['save'], layer_tree=o['layer_tree'], colours=o['colours'],
+                      only_within=o['only_within'], reach=o['reach'])
         folder = folder_of(nm)
         if not st['path']:
             store_roles(doc, hl, st['chosen'])
@@ -2853,6 +2908,7 @@ def dialog(doc, vp):
                                         subs=subs, weights=weights, parent=parent, out_box=out_box, count=count_text,
                                         depth=depth, merge=merge, dest=dest, weights_say=weights_say, unknown=unknown,
                                         layer_tree=layer_tree, tree_say=tree_say, colours=colours, colours_say=colours_say,
+                                        only_within=only_within, reach=reach,
                                         updates=updates, forget=forget, on_forget=on_forget, hidden=hidden,
                                         save_boxes=save_boxes, save_label=save_label, show_save=show_save,
                                         on_edit=on_edit, on_draw=on_draw, load=load, refresh=refresh, finish=finish)

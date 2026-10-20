@@ -2978,6 +2978,24 @@ except SystemExit as e_:
 # model's faults in plain words
 import fnmatch as fnm_
 import hl as hlc_
+hl_reach_ = [(str(d_), ((d_, -1, -1), (d_ + 2, 1, 1))) for d_ in (100, 224, 300)]
+ok(hlc_.within_reach(hl_reach_, 225, camera=(0, 0, 0)) == {'100', '224'},
+   'hl: perspective reach keeps boxes at 100 and 224 m, leaving one at 300 m out at 225 m')
+ok(hlc_.within_reach([('straddles', ((224, -1, -1), (230, 1, 1)))], 225, camera=(0, 0, 0)) == {'straddles'}
+   and hlc_.within_reach([('touches', ((225, -1, -1), (226, 1, 1)))], 225, camera=(0, 0, 0)) == {'touches'},
+   'hl: a box straddling the reach, or touching it, is kept')
+ok(hlc_.within_reach(hl_reach_, 125, direction=(1, 0, 0)) == {'100', '224'}
+   and hlc_.within_reach(hl_reach_, 125, direction=(-1, 0, 0)) == {'224', '300'},
+   'hl: parallel reach starts at the boxes\' front, in either view direction')
+ok(hlc_.within_reach(hl_reach_, 125, direction=(1, 0, 0), plane=(0, 0, 0)) == {'100'}
+   and hlc_.within_reach(hl_reach_, 25, direction=(1, 0, 0), plane=(200, 0, 0)) == {'100', '224'},
+   'hl: parallel reach starts at the section plane, keeping boxes in front of it')
+ok(all(hlc_.within_reach(hl_reach_, r_) == {'100', '224', '300'} for r_ in (None, 0, -1))
+   and hlc_.within_reach([], 225, direction=(1, 0, 0)) == set(),
+   'hl: no reach or a non-positive reach keeps everything, and no boxes keeps nothing')
+ok(hlc_.within_reach([('diagonal', ((3, 4, 0), (4, 5, 1)))], 5, camera=(0, 0, 0)) == {'diagonal'}
+   and not hlc_.within_reach([('diagonal', ((3, 4, 0), (4, 5, 1)))], 4.9, camera=(0, 0, 0)),
+   'hl: perspective reach is the nearest Euclidean distance, not depth along a view axis')
 hl_cases_ = {'Walls Combined': 'building', 'Elevator Shaft': 'building', 'Floorplate': 'building', 'Stair': 'building',
              'Railing': 'detail', 'Mullion Border': 'detail', 'Glass Door': 'detail', 'PROJECT::Roof::Roof Beams': 'detail',
              'Tables and Chairs': 'furniture', 'PROJECT::Bedrooms::Bed 1': 'furniture', 'Roof Tiles': 'texture',

@@ -2104,7 +2104,7 @@ def dialog(doc, vp):
         last.pop('view')
     sel = drawable(doc, vp, True)
     skipped = left_out(doc)
-    st = dict(req=None, path=None, objs=None, rows=[], chosen={}, boxes={}, built=None, form=None)
+    st = dict(req=None, path=None, objs=None, rows=[], chosen={}, boxes={}, built=None, form=None, oversize=None)
 
     def label(text='', wrap=False, left=False, hint=False):
         x = forms.Label()
@@ -2299,15 +2299,18 @@ def dialog(doc, vp):
     def keys():
         return [k for k, _ in st['views']]
 
-    def build():
+    def build(s=None):
         """the request the choices draw, or a reason it cannot be drawn"""
         key = keys()[view.SelectedIndex] if view.SelectedIndex >= 0 else 'viewport'
         if key == 'request' and not st['req']:                # the list is being refilled after Clear
             key = 'viewport'
-        s = float(scale.Value or 1)
+        s = float(scale.Value or 1) if s is None else s
         v, fr, clip = view_for(doc, vp, key, s, fit_points() if key.startswith(('std:', 'clip:')) else None, st['req'])
         if v is None:
             return 'Nothing to draw in this view.'
+        if key == 'request' and s != float(scale.Value or 1):
+            ratio = float(scale.Value or 1) / s
+            fr = dict(fr, w_pt=fr['w_pt'] * ratio, h_pt=fr['h_pt'] * ratio)
         nm = name.Text.strip()
         groups = st['req']['groups'] if st['req'] else None
         if st['req']:
@@ -2356,12 +2359,16 @@ def dialog(doc, vp):
 
     def saves():
         """the files ticked under Also save; a request file's drawing writes them all, in its own folder"""
-        return [k for k, _, _ in hl.SAVES] if st['path'] else [k for k, b_ in save_boxes if b_.Checked]
+        if st['path']:
+            return [k for k, _, _ in hl.SAVES if not st['oversize'] or k not in ('ai', 'svg')]
+        return [k for k, b_ in save_boxes if b_.Checked and b_.Enabled]
 
     def say_dest(*_):
         nm = name.Text.strip() or 'NAME'
         dest.Text = hl.destination(nm, bool(add.Checked), parent.Text.strip() or OUT_LAYER, folder_of(nm),
                                    os.path.expanduser('~'), saves())
+        if st['oversize']:
+            dest.Text += ' ' + st['oversize']['say']
 
     def show_save(*_):
         vis = bool(saves()) and not st['path']
@@ -2382,18 +2389,33 @@ def dialog(doc, vp):
         depth_say.Text = ('One weight per role draws every line of a role at one weight, so lines are not lighter '
                           'with distance.' if mode == 'single' else
                           'Lines further past the section, or further back without one, are drawn a step lighter.')
-        say_dest()
+        st['oversize'] = None
+        for k, b_ in save_boxes:
+            if k in ('ai', 'svg'):
+                b_.Enabled = not st['path']
         if view.SelectedIndex < 0:
+            show_save()
             return
         b = build()
         st['built'] = b
         if isinstance(b, str):
             size.Text, cut_text.Text = b, ''
             cut.Enabled = False
+            show_save()
             return
         fr = b['frame']
         mm = (fr['w_pt'] / PT_PER_MM, fr['h_pt'] / PT_PER_MM)
-        size.Text = '%.0f x %.0f mm on paper%s' % (mm[0], mm[1], '; larger than A0, check the scale' if max(mm) > 1189 else '')
+        working = hl.working_scale(fr['w_pt'], fr['h_pt'], b['scale'])
+        if working is not None:
+            st['oversize'] = dict(scale=b['scale'], working=working,
+                                  say=hl.oversize_say(fr['w_pt'], fr['h_pt'], b['scale'], working))
+            size.Text = '%.1f x %.1f m on paper; drawn as at 1:%d' % (mm[0] / 1000, mm[1] / 1000, working)
+            for k, b_ in save_boxes:
+                if k in ('ai', 'svg'):
+                    b_.Enabled = False
+        else:
+            size.Text = '%.0f x %.0f mm on paper%s' % (mm[0], mm[1], '; larger than A0, check the scale' if max(mm) > 1189 else '')
+        show_save()
         c = b.get('clip') or []
         n = 1 if isinstance(c, dict) else len(c)
         cut_text.Text = ('%d clipping plane%s this view' % (n, ' cuts' if n == 1 else 's cut')) if n else 'No section in this view'
@@ -2555,8 +2577,13 @@ def dialog(doc, vp):
             for i in far:
                 doc.Objects.Select(i, True)
             doc.Views.Redraw()
-            msg.Text = hl.frame_problem(fr['w_pt'], fr['h_pt'], len(far), st['built'].get('scale'))
-            return
+            if far or st['oversize'] is None:
+                msg.Text = hl.frame_problem(fr['w_pt'], fr['h_pt'], len(far), st['built'].get('scale'))
+                return
+            st['built'] = build(st['oversize']['working'])
+            if isinstance(st['built'], str):
+                msg.Text = st['built']
+                return
         if not (add.Checked or saves() or check.Checked):
             msg.Text = 'Tick Add the drawing to this model, or a file under Also save: as it is, Draw makes nothing.'
             return
@@ -2808,7 +2835,7 @@ def dialog(doc, vp):
             store_roles(doc, hl, st['chosen'])
         return dict(req=req, folder=folder, name=nm, add=bool(add.Checked), check=bool(check.Checked),
                     label=st['views'][view.SelectedIndex][1], parent=parent.Text.strip() or OUT_LAYER,
-                    save=saves(), keep_all=bool(st['path']),
+                    save=saves(), keep_all=bool(st['path']) and not st['oversize'], oversize=st['oversize'],
                     layer_tree=o['layer_tree'],
                     tokens_from=st['path'] or out_box.Text.strip() or out_default,
                     notice=None if st['path'] else st.get('notice'))
@@ -3182,6 +3209,8 @@ def drawn(doc, o, folder):
     req = dict(o['req'], out='.')
     rpath = os.path.join(folder, 'request.json')
     say('HL: %s at 1:%g, %s' % (nm, req['scale'], o['label']))
+    if o.get('oversize'):
+        say(o['oversize']['say'])
     say('Model: %s, in %s; %d objects drawn' % (doc.Path or 'not saved', doc.ModelUnitSystem,
                                                  len(req.get('objects') or [])))
     if o.get('notice'):

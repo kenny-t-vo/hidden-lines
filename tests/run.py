@@ -3169,6 +3169,15 @@ ok(hl_far_ == ['stray'] and hl_fr_[0] is None and '100 km' in hl_fr_[1] and '1 o
    f'hl: a sheet wider than Illustrator takes is refused, naming the objects far from the rest that make it so, or '
    f'saying the drawing in Rhino and its DXF are at true size whatever the scale, with a print scale that fits A0: '
    f'{hl_far_}, {hl_fr_}')
+ok(hlc_.working_scale(85039.4, 56692.9, 1) == 50
+   and hlc_.working_scale(20000, 300, None) is None
+   and hlc_.working_scale(1863.35, 1354.7, 100) is None
+   and hlc_.working_scale(2834645669, 1e6, 1) is None,
+   'hl: an oversize sheet uses the largest standard scale fitting A0, unless the scale is missing or none fits; '
+   'a sheet within Illustrator\'s limit keeps its chosen scale')
+hl_over_ = hlc_.oversize_say(85039.4, 56692.9, 1, 50)
+ok(all(s_ in hl_over_ for s_ in ('1:50', '30 m across', 'true size', 'no Illustrator or SVG file')),
+   f'hl: the oversize notice names the working scale, paper size, files left out and true-size drawing: {hl_over_}')
 hl_long_ = [hlc_.long_path('C:\\Users\\a\\' + 'x' * n_, 'plan') for n_ in (200, 240)]
 ok(hl_long_[0] is None and '260' in hl_long_[1] and 'Save files in' in hl_long_[1],
    f'hl: a drawing whose files would pass Windows\' 260 characters is said so, with what to change: {hl_long_}')

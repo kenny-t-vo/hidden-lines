@@ -1,9 +1,9 @@
-HL 0.1.3: the dialog fits a laptop's screen. It opens no taller than the screen, its options scroll when the window is too short for them, and the line saying where the drawing goes, Cancel and Draw, and the Help, Report a problem and About links stay in view at the bottom. The grey notes under the options are a point smaller. Drawings are the same as 0.1.2's.
+HL 0.1.4: a drawing that stopped with "no visible line falls inside the frame" although its objects were in view now draws. Where Rhino's hidden-line engine returns no visible line in the frame and the model has meshes, HL draws from the meshes' own faces instead, and its log says so; this was seen in a perspective of a model of non-manifold meshes. Every other drawing is the same as 0.1.3's.
 
 To update from an earlier version, click Update for HiddenLines in the Package Manager and restart Rhino; HL keeps the Python and packages it downloaded and does not ask again. To install it, type `PackageManager` in Rhino 8, search for **HiddenLines**, click Install, and restart Rhino. Or download the package for your computer from the assets below:
 
-- `hiddenlines-0.1.3-rh8_0-mac.yak`: a Mac, Apple silicon or Intel
-- `hiddenlines-0.1.3-rh8_0-win.yak`: Windows 10 or 11
+- `hiddenlines-0.1.4-rh8_0-mac.yak`: a Mac, Apple silicon or Intel
+- `hiddenlines-0.1.4-rh8_0-win.yak`: Windows 10 or 11
 
 **Mac.** Double-click the file. Rhino 8 opens and installs it without showing a window; its command line says "Successfully installed HiddenLines". Quit Rhino and open it again.
 

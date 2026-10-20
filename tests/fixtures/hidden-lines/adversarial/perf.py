@@ -233,6 +233,8 @@ def worker(req, profile=False, deadline=585):
                 status = ctypes.CDLL('/usr/lib/libproc.dylib').proc_pid_rusage(os.getpid(), 4, ctypes.byref(usage))
                 if status == 0:
                     record.update(footprint_bytes=int(usage.phys_footprint), peak_bytes=int(usage.lifetime_max_phys_footprint))
+            else:                                      # Linux: the worker's own peak resident set so far, in KB
+                record['peak_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
             phases[phase] = record
             line = 'PERF_PHASE ' + json.dumps(dict(phase=phase, **record))
             print(line, flush=True)

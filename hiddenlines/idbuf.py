@@ -885,18 +885,87 @@ def stretch_points(S, persp, line, P, a, b):
 
 # ---------------------------------------------------------------- lines from the meshes
 
+@njit(cache=True)
+def _root(up, i):
+    while up[i] != i:
+        up[i] = up[up[i]]
+        i = up[i]
+    return i
+
+
+@njit(cache=True)
+def _within(X, a0, a1, b0, b1, r2):
+    """whether a point of X[a0:a1] lies within the radius of one of X[b0:b1]: their distance squared, summed over x, y
+    and z in turn as scipy's cKDTree sums it, at most r2"""
+    for p in range(a0, a1):
+        for q in range(b0, b1):
+            s = 0.0
+            for d in range(3):
+                e = X[p, d] - X[q, d]
+                s += e * e
+            if s <= r2:
+                return True
+    return False
+
+
+@njit(cache=True)
+def _weld(X, K, o, r2):
+    """weld's ids for the points U (n x 3, as np.unique orders them), taken in order of their cells and within a cell
+    in U's order: X the points, K their cells (n x 3), o their indices in U; r2 the radius squared"""
+    n = len(X)
+    up = np.arange(n)                                  # a point's parent, before it: a root is its group's first point
+    cs = np.zeros(n + 1, dtype=np.int64)               # each cell's first place in o
+    c = 0
+    for j in range(n):
+        if j == 0 or K[j, 0] != K[j - 1, 0] or K[j, 1] != K[j - 1, 1] or K[j, 2] != K[j - 1, 2]:
+            cs[c] = j
+            c += 1
+        else:
+            up[o[j]] = o[cs[c - 1]]                    # a cell's points all lie within the radius of each other
+    cs[c] = n
+    # the cells after a cell and within two of it in each axis lie in 13 rows of the cells in order, x and y fixed;
+    # each row's first cell at or past the one sought only moves on as the cell does
+    first = np.zeros(13, dtype=np.int64)
+    for a in range(c):
+        ka = cs[a]
+        row = 0
+        for dx in range(3):
+            for dy in range(-2 if dx else 0, 3):
+                kx, ky = K[ka, 0] + dx, K[ka, 1] + dy
+                kz = K[ka, 2] + 1 if dx == 0 and dy == 0 else K[ka, 2] - 2
+                b = max(first[row], a + 1)
+                while b < c and (K[cs[b], 0] < kx or K[cs[b], 0] == kx and (
+                        K[cs[b], 1] < ky or K[cs[b], 1] == ky and K[cs[b], 2] < kz)):
+                    b += 1
+                first[row] = b
+                row += 1
+                while b < c and K[cs[b], 0] == kx and K[cs[b], 1] == ky and K[cs[b], 2] <= K[ka, 2] + 2:
+                    ra, rb = _root(up, o[ka]), _root(up, o[cs[b]])
+                    if ra != rb and _within(X, cs[a], cs[a + 1], cs[b], cs[b + 1], r2):
+                        up[max(ra, rb)] = min(ra, rb)
+                    b += 1
+    ids = np.empty(n, dtype=np.int64)
+    k = 0
+    for i in range(n):
+        up[i] = up[up[i]]
+        if up[i] == i:
+            ids[i] = k
+            k += 1
+        else:
+            ids[i] = ids[up[i]]
+    return ids
+
+
 def weld(C, r):
-    """an id for each point of C (n x 3), equal for points within r of each other, through chains of them"""
-    from scipy.spatial import cKDTree
-    from scipy.sparse import coo_matrix
-    from scipy.sparse.csgraph import connected_components
+    """an id for each point of C (n x 3), equal for points within r of each other, through chains of them, numbered
+    from 0 in order of each group's first point as np.unique orders them. The points are welded through cells 0.55 r a
+    side, so n points stacked within r cost n, not n^2: a cell's points lie under 0.96 r apart, so all weld, and points
+    in cells three apart in an axis 1.1 r or more, so a cell is measured only against the cells within two of it, while
+    r is over 2^-46 of the coordinates (2^-22 in mesh_edges)"""
     U, inv = np.unique(C, axis=0, return_inverse=True)
-    inv = inv.ravel()
-    pairs = cKDTree(U).query_pairs(r, output_type='ndarray')
-    if not len(pairs):
-        return inv
-    g = coo_matrix((np.ones(len(pairs)), (pairs[:, 0], pairs[:, 1])), shape=(len(U), len(U)))
-    return connected_components(g, directed=False)[1][inv]
+    G = np.floor(U / (0.55 * r)).astype(np.int64)
+    o = np.lexsort((G[:, 2], G[:, 1], G[:, 0]))
+    return _weld(U[o], G[o], o, r * r)[inv.ravel()]
 
 
 def openings(Vp, C, Fw, Fl, T, nrm, tt, wa, wb, la, lb, start, cnt):

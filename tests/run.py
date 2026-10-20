@@ -1933,6 +1933,41 @@ ok(mk_ == {'closed': [(1, 12)], 'open': [(0, 4), (1, 8)]},
    f'hidden-lines: a box\'s mesh written a triangle apart gives its twelve edges as creases, one vertex a float32 step '
    f'off welded; open at the top, four of them are the boundary: {mk_}')
 
+# the weld goes a cell at a time and welds as scipy's pairs within the radius and their connected components did:
+# triangles stacked 1 nm apart at 1,000 units' depth, as perf.py's weld scene stacks them, 1,000 of them (1.5 million
+# pairs) with a row of points a millionth under the radius apart, which welds through, one a millionth over, which
+# does not, and points scattered about it, in no order, at mesh_edges' radius; and 100,000 of them (15 billion pairs)
+# weld to their three corners
+def ib_pairs_weld_(C, r):
+    from scipy.spatial import cKDTree
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    U_, inv_ = np.unique(C, axis=0, return_inverse=True)
+    pairs_ = cKDTree(U_).query_pairs(r, output_type='ndarray')
+    if not len(pairs_):
+        return inv_.ravel()
+    g_ = coo_matrix((np.ones(len(pairs_)), (pairs_[:, 0], pairs_[:, 1])), shape=(len(U_), len(U_)))
+    return connected_components(g_, directed=False)[1][inv_.ravel()]
+def ib_stack_(n):
+    V_ = np.tile([[-1, -0.7, 0], [1, -0.7, 0], [0, 0.7, 0]], (n, 1)).astype(float)
+    V_[:, 2] = np.repeat(np.arange(n) * 1e-9, 3)
+    return V_.astype(np.float32).astype(float) + [0, 0, -1000]        # as read_scene reads an export less its origin
+C_wd_ = ib_stack_(1000)
+r_wd_ = max(float(np.linalg.norm(C_wd_.max(0) - C_wd_.min(0))) * 1e-6, float(np.abs(C_wd_).max()) * 2 ** -22)
+rng_wd_ = np.random.default_rng(5)
+t_wd_ = np.arange(40)[:, None] * np.array([1, 2, 2]) / 3 * r_wd_
+C_wd_ = np.concatenate([C_wd_, [0.2, 0, -1000] + t_wd_ * (1 - 1e-6), [0.2, 0.1, -1000] + t_wd_ * (1 + 1e-6),
+                        [0.3, 0.2, -1000] + rng_wd_.uniform(0, 8 * r_wd_, (400, 3))])
+C_wd_ = C_wd_[rng_wd_.permutation(len(C_wd_))]
+got_wd_, ref_wd_ = ib_.weld(C_wd_, r_wd_), ib_pairs_weld_(C_wd_, r_wd_)
+big_wd_ = ib_.weld(ib_stack_(100_000), r_wd_)
+ok(np.array_equal(got_wd_, ref_wd_) and len(np.unique(ref_wd_)) > 44
+   and np.array_equal(big_wd_, np.tile([0, 2, 1], 100_000)),
+   f'hidden-lines: 1,000 triangles stacked 1 nm apart, rows a millionth under and over the radius apart and points '
+   f'about them weld as every pair within the radius did, {len(C_wd_)} points to the same {len(np.unique(got_wd_))} '
+   f'ids; 100,000 stacked weld to their three corners: '
+   f'{np.unique(big_wd_).tolist()}')
+
 # the export from version 4 writes its meshes less an origin, which float32 would round 0.2 pt off at the model's depth:
 # tjunction's meshes written so draw as before, and an older export, with none, reads as it did
 s_or_ = json.loads((FX / 'hidden-lines' / 'tjunction' / 'scene.json').read_text())

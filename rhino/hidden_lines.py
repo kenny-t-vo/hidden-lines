@@ -396,8 +396,13 @@ def geoms(o, doc, xf=None, depth=0):
     elif isinstance(g, G.Curve):
         out.append(('curve', g.DuplicateCurve()))
     if xf is not None:
-        for _, x in out:
+        mirror = xf.Determinant < 0                       # Transform by a mirror turns faces against the definition's
+        for kd, x in out:
             x.Transform(xf)
+            if mirror and kd == 'brep':
+                x.Flip()
+            elif mirror and kd == 'mesh':
+                x.Flip(True, True, True)
     return [(kd, x) for kd, x in out if x is not None]
 
 

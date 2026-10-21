@@ -114,6 +114,80 @@ def kit_dir_tests():
 kit_dir_tests()
 
 
+def mirrored_block_tests():
+    """geoms() on nested blocks placed mirrored, with stand-ins that orient as RhinoCommon 8.35 does: Transform by a
+    mirror turns a brep's or a mesh's faces against its definition's, Flip turns them back"""
+    export = load_hidden_lines()
+    G = export.G
+
+    class Xform:
+        def __init__(self, *diag):
+            self.diag = diag
+
+        def __mul__(self, other):
+            return Xform(*(a * b for a, b in zip(self.diag, other.diag)))
+
+        @property
+        def Determinant(self):
+            return math.prod(self.diag)
+
+    class Oriented:
+        def __init__(self, faces=1):
+            self.faces = faces                            # 1 outward, -1 inward
+
+        def Transform(self, xf):
+            self.faces *= 1 if xf.Determinant > 0 else -1
+
+    class Brep(Oriented):
+        def DuplicateBrep(self):
+            return Brep(self.faces)
+
+        def Flip(self):
+            self.faces = -self.faces
+
+    class Mesh(Oriented):
+        def DuplicateMesh(self):
+            return Mesh(self.faces)
+
+        def Flip(self, vertex_normals, face_normals, face_orientation):
+            self.faces = -self.faces if face_orientation else self.faces
+
+    class Extrusion:
+        def ToBrep(self, split_kinky):
+            return Brep()
+
+    class Curve(Oriented):
+        def DuplicateCurve(self):
+            return Curve()
+
+    class Instance:
+        def __init__(self, idef, xf):
+            self.ParentIdefId, self.Xform = idef, xf
+
+    class Other:
+        pass
+
+    G.InstanceReferenceGeometry, G.Brep, G.Mesh, G.Extrusion, G.Curve = Instance, Brep, Mesh, Extrusion, Curve
+    G.SubD = G.Surface = Other
+    obj = lambda g: types.SimpleNamespace(Geometry=g)
+    same, mirror = Xform(1, 1, 1), Xform(-1, 1, 1)
+    defs = {'cell': [obj(Brep()), obj(Mesh()), obj(Extrusion()), obj(Curve())],
+            'bad': [obj(Brep(-1)), obj(Mesh(-1))],
+            'home': [obj(Instance('cell', same)), obj(Instance('cell', mirror)), obj(Instance('bad', mirror))],
+            'scheme': [obj(Instance('home', same)), obj(Instance('home', mirror))]}
+    doc = types.SimpleNamespace(InstanceDefinitions=types.SimpleNamespace(
+        FindId=lambda i: types.SimpleNamespace(GetObjects=lambda: defs[i])))
+    got = export.geoms(obj(Instance('scheme', Xform(1, -1, 1))), doc)
+    faces = [(kind, g.faces) for kind, g in got if kind != 'curve']
+    home = [('brep', 1), ('mesh', 1), ('brep', 1)] * 2 + [('brep', -1), ('mesh', -1)]
+    ok(len(got) == 20 and faces == home * 2,
+       f'hl: a block placed mirrored, nested or not, gives its breps and meshes facing as its definition faces, so the '
+       f'check stays quiet for an outward definition and reports one that is inside out: {faces}')
+
+
+mirrored_block_tests()
+
+
 def export_mesh_tests():
     import array
     import itertools

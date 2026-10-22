@@ -113,9 +113,9 @@ The frame fits the building, with a margin; the ground is cut off at the frame.
 | Leave out | Make2D drawings, notes, scale figures | not drawn, hides nothing |
 
 - To change a layer's role, choose another under **Draws as**. Point at the list to read what each role does.
-- The list shows top-level layers, and a sublayer takes its parent's role unless its own name says otherwise. Tick **Show sublayers** to set a sublayer on its own.
+- The list shows top-level layers, and a sublayer takes its parent's role unless its own name says otherwise. Under a layer you set to Context, Ground, See-through, Lines on the ground or Hides, a sublayer's name can make it another of those or leave it out, but not Building, Building detail, Furniture or Texture: Walls under a layer set to Context draw as context. Tick **Show sublayers** to set a sublayer on its own.
 - The Why column says how a layer got its role: set by you, its name, its parent, or not a name HL knows, which draws as Building.
-- A layer's name decides its first guess. Plans, Section, Axo, Make2D, Layout and annotation layers are left out, so earlier drawings in the model are not drawn again.
+- A layer's name decides its first guess. Plans, Section, Axo, Make2D, Layout, Reference and annotation layers are left out, so earlier drawings and reference geometry in the model are not drawn.
 - The roles you set are saved in the model, so the next HL opens with them.
 
 ## Line weights

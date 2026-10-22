@@ -3380,18 +3380,34 @@ hl_cases_ = {'Walls Combined': 'building', 'Elevator Shaft': 'building', 'Floorp
              'Site Geo::Main Context Masses::Masses': 'context', 'Base': 'ground', 'design::base/ground': 'ground',
              'Site Geo::Curb 3D': 'ground', 'Door Swing': 'lines', 'Grid': 'lines', 'Trees': 'trees',
              'Plans::Dining Grid': 'skip', 'Section::Poche::Poche Light': 'skip', 'Scale Figures': 'skip',
-             'Construction::Arrow': 'skip', 'Geometry': None, 'Up Faces': None}
+             'Construction::Arrow': 'skip', 'Geometry': None, 'Up Faces': None, 'REFERENCE::site frame': 'skip',
+             'GROUND::paving::lots and yards': 'ground', 'Lot Lines': 'lines', 'scheme::ground floor': 'building'}
 hl_miss_ = {p_: hlc_.guess(p_) for p_, r_ in hl_cases_.items() if hlc_.guess(p_) != r_}
 ok(not hl_miss_, f'hl: roles guessed from the layer names of representative requests, none missed {hl_miss_}')
 hl_res_ = hlc_.resolve(['Railing', 'Old::Walls', 'PROJECT::Utility', 'Up Faces', 'Roofs::Roof Tiles', 'Plans::Walls',
                         'Plans::Anno'], {'Railing': 'furniture', 'Old': 'skip', 'PROJECT': 'context', 'Roofs': 'building',
-                                         'Plans': 'context'})
+                                         'Plans': 'building'})
 ok(hl_res_ == {'Railing': ('furniture', 'set'), 'Old::Walls': ('skip', 'parent'), 'PROJECT::Utility': ('context', 'parent'),
                'Up Faces': ('building', 'default'), 'Roofs::Roof Tiles': ('texture', 'name'),
                'Plans::Walls': ('building', 'name'), 'Plans::Anno': ('skip', 'name')},
    f'hl: a role kept on a layer wins, a parent\'s Leave out covers its sublayers, a sublayer\'s own name beats its '
    f'parent\'s kept role, a parent given a role stops its own name leaving its sublayers out, and a layer nothing '
    f'names draws as building: {hl_res_}')
+hl_sub_ = hlc_.resolve(['EXISTING::lod2::walls', 'EXISTING::lod2::garage doors', 'GROUND::garden-bed',
+                        'GROUND::woodland-floor', 'GROUND::Brick Paving', 'GROUND::property lines',
+                        'GROUND::planting::trees', 'GROUND::Scale Figures', 'Mask::Walls', 'EXISTING::House A::Walls',
+                        'Facade::Walls'],
+                       {'EXISTING': 'context', 'GROUND': 'ground', 'Mask': 'hides', 'EXISTING::House A': 'building',
+                        'Facade': 'detail'})
+ok(hl_sub_ == {'EXISTING::lod2::walls': ('context', 'parent'), 'EXISTING::lod2::garage doors': ('context', 'parent'),
+               'GROUND::garden-bed': ('ground', 'parent'), 'GROUND::woodland-floor': ('ground', 'parent'),
+               'GROUND::Brick Paving': ('ground', 'parent'), 'GROUND::property lines': ('lines', 'name'),
+               'GROUND::planting::trees': ('trees', 'name'), 'GROUND::Scale Figures': ('skip', 'name'),
+               'Mask::Walls': ('hides', 'parent'), 'EXISTING::House A::Walls': ('building', 'name'),
+               'Facade::Walls': ('building', 'name')},
+   f'hl: under a layer set to a role outside the building, a sublayer\'s name does not make it building, detail, '
+   f'furniture or texture but can make it another role outside the building or leave it out, and under a nearer '
+   f'layer set to building, or a layer set to detail, its sublayers\' names count again: {hl_sub_}')
 hl_odd_ = 'Walls [old]*?'
 ok(fnm_.fnmatchcase(hl_odd_, hlc_.glob_escape(hl_odd_)) and not fnm_.fnmatchcase('Walls o*?', hlc_.glob_escape(hl_odd_)),
    'hl: a layer path with [, * and ? becomes a pattern matching it alone')

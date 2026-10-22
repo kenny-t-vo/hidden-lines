@@ -36,11 +36,11 @@ LABEL = {k: lab for k, lab, _, _ in ROLES}
 WORDS = (
     (SKIP, 'make2d hl plan plans axo axon axonometric section elevation layout anno annotation dim dims dimension '
            'text label note figure people person camera clipping drawing 2d poche construction guide arrow '
-           'hatch scrap'),
+           'hatch scrap reference'),
     ('ground', 'ground terrain topo topography landform earth grade base grass lawn curb kerb soil'),
     ('trees', 'tree vegetation planting plant shrub foliage hedge bush greenery'),
     ('texture', 'tile tiling texture cladding shingle siding brick'),
-    ('lines', 'line swing grid lot property parcel setback marking contour'),
+    ('lines', 'line swing grid property parcel setback marking contour'),
     ('context', 'context neighbour neighbor neighbouring neighboring surrounding existing adjacent sitebuilding '
                 'street city'),
     ('furniture', 'furniture furnishing chair table desk bed sofa couch cabinet shelf shelving casework fixture '
@@ -51,7 +51,7 @@ WORDS = (
 )
 _RX = [(role, re.compile(r'\b(?:%s)(?:s|es)?\b' % '|'.join(re.escape(w) for w in sorted(words.split(), key=len,
        reverse=True)))) for role, words in WORDS]
-_PHRASES = {'scale figure': SKIP, 'site element': 'ground'}
+_PHRASES = {'scale figure': SKIP, 'site element': 'ground', 'ground floor': 'building'}
 
 
 def words_of(name):
@@ -89,9 +89,10 @@ def guess(path):
 
 def resolve(paths, stored):
     """{full path: (role, how)} for the layers given, from the roles stored on layers ({full path: role}): how is 'set'
-    (stored on the layer), 'parent' (a parent's stored Leave out, or its stored role where the name suggests none),
-    'name' (guessed from its name or a parent's; a Leave out word above the nearest parent with a stored role does not
-    count, so setting Plans to building draws Plans::Walls) or 'default' (building)"""
+    (stored on the layer), 'parent' (a parent's stored Leave out, or its stored role where the name suggests none, or
+    suggests one of SUBJECT under a stored role outside SUBJECT, so Walls under a layer set to context draws as
+    context), 'name' (guessed from its name or a parent's; a Leave out word above the nearest parent with a stored role
+    does not count, so setting Plans to building draws Plans::Walls) or 'default' (building)"""
     keys = set(LABEL)
     out = {}
     for p in paths:
@@ -106,6 +107,8 @@ def resolve(paths, stored):
             continue
         below = '::'.join(parts[len(up.split('::')):]) if up else p   # a role kept above settles the names above it
         own = guess(parts[-1]) if guess(below) != SKIP else SKIP
+        if up and own in SUBJECT and stored[up] not in SUBJECT:
+            own = None
         if own:
             out[p] = (own, 'name')
         elif up:

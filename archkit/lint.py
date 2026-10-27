@@ -39,7 +39,9 @@ header (x0,y0,x1,y1 in model units), and a line end on the window's edge is not 
 A layer's role comes from, in order: data-role on an SVG group, the layer id in the tokens,
 a {role} tag in the layer name, or a suggestion from role_words, each matched at the start of a
 word (reported, not applied). Dimensions, marks, text and non-printing layers are skipped for
-line-end checks. SVG styles come from attributes, class rules in <style>, then style attributes;
+line-end checks. Paths marked data-free-ends="true" carry deliberate mark or visibility stops,
+not structural joins; their ends are skipped, but their weights and linework are checked.
+SVG styles come from attributes, class rules in <style>, then style attributes;
 a length in px is a user unit.
 """
 import json, math, re
@@ -54,13 +56,14 @@ TAG = re.compile(r'\{([a-z]+)\}')
 
 class Path2:
     """one drawn thing on paper: straight segments, whether closed, where it came from, the clip it prints through"""
-    def __init__(self, layer, segs, closed, kind, src, width=None, stroke=None, fill=None, clip=None, want=None):
+    def __init__(self, layer, segs, closed, kind, src, width=None, stroke=None, fill=None, clip=None, want=None, free_ends=False):
+        self.free_ends = free_ends
         self.layer, self.segs, self.closed, self.kind, self.src = layer, segs, closed, kind, src
         self.width, self.stroke, self.fill, self.clip = width, stroke, fill, clip
         self.want = want                                # the weight its sublayer sets (data-weight), a band or pt
 
     def ends(self):
-        if self.closed or not self.segs:
+        if self.closed or self.free_ends or not self.segs:
             return []
         return [self.segs[0][0], self.segs[-1][1]]
 
@@ -365,7 +368,7 @@ def read_svg(path):
             if segs:
                 scale_m = math.sqrt(abs(m[0] * m[3] - m[1] * m[2]))
                 paths.append(Path2(layer, segs, closed, tag, el.get('id', ''), w * scale_m if w is not None else None,
-                                   style.get('stroke'), style.get('fill'), clip, want))
+                                   style.get('stroke'), style.get('fill'), clip, want, el.get('data-free-ends') == 'true'))
         for ch in el:
             walk(ch, m, style, layer, clip, want)
 

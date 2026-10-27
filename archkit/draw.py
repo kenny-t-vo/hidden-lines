@@ -273,7 +273,7 @@ class Drawing:
                                   f'stroke="{hexof(self.t.ink(raw, sw))}" stroke-width="{sw:g}"') if leaf else ''
                         out.append(f'<g id="{sid}" inkscape:groupmode="layer" inkscape:label="{esc(part[0])}"{attrs_}>')
                         opened.append(part)
-                own = ''
+                own = ' data-free-ends="true"' if e.get('free_ends') else ''
                 if e.get('fill'):
                     own += f' fill="{hexof(e["fill"])}"'
                     if not s['stroke'] and e.get('stroke') != 'none':

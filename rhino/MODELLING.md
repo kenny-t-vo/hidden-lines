@@ -32,11 +32,10 @@ How to model in Rhino so that a model draws cleanly through HL, Make2D, clipping
 
 ## The P2 site model
 
-Checked on 14 October 2026, the 19:53 save, through the section request's groups: 1,586 of 4,565 objects have faults (`docs/checked.md`).
+Checked on 28 October 2026, every layer but the superseded ones, after a cleanup (the model's `SITE-MODEL.md`, Cleanup, 28 October): 261 of 4,777 objects have faults, down from 1,594 before it.
 
-- **Trees.** 966 tree solids are creased inside: they were revolved headless from polylines.
-- **Ground and paving.** 415 objects have edges under 1 cm, and 85 have faces whose loops cross or touch themselves, mostly boulevards and lawns. Both come from the coverage's simplification.
-- **Clashes.** 36 objects run into another. Cornellà's ground floor and units run into the walls of three existing houses standing on its lots (142, 114 and 62 m³): the crit request's parcel filter left those houses in, and Cornellà hid them in the isometric. The rest are chimneys, dormers and porches in LOD2 houses whose 40 unions fail to close, and two garages that overlap.
-- **Faces lying on each other.** 18 objects: Cornellà's court galleries on its ground floor, and the roof terraces on its homes' roofs.
-- **Unjoined surfaces.** 40 gallery surfaces share an edge with another without being joined.
-- **Open polysurfaces.** 58 on the ground layer (the curb faces, not drawn).
+- **Fixed then.** The 959 tree solids, creased where the trunk meets its base and its crown, split there. 68 ground faces whose loops touched themselves, nearly all zero-width spikes left by the coverage's cuts. Edges under 1 cm on 325 of the 401 ground faces that had them, collapsed together with the neighbours sharing each vertex. Two sheds whose walls lay within 0.3 mm of each other, which Rhino's boolean read as a 24 m³ clash. A chimney standing inside its walls and roof.
+- **Ground.** 76 faces keep an edge under 1 cm, where collapsing it would open or close a sliver over 1 mm wide, mostly against a building's base.
+- **Unions.** The parts of five LOD2 houses do not union in Rhino, so HL draws them as parts. Leaving out one roof, or at 944 the walls or the stoop, lets the rest union.
+- **Cornellà.** A massing test placed as built: its terraces and galleries lie on its roofs and ground floor (18 objects), 38 of their surfaces share an edge unjoined, and it runs into the houses its footprint covers.
+- **Open polysurfaces.** 58 curb faces, not drawn.

@@ -1,6 +1,6 @@
 #! python3
 # venv: hl
-# r: numpy==2.0.2
+# r: numpy
 """The exact hidden-line drawing of the open model, written for kit.py hidden-lines to draw.
 
 Run inside Rhino 8 with the model open, through the connector's run_python, in calls the router's timeout allows:
@@ -1626,7 +1626,7 @@ def hl_module():
 def rhino_python():
     """(Rhino's own Python 3, the folder HL installs the drawing's packages into for it)"""
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.__file__)))    #.../py39-rh8/lib/python3.9/os.py
-    exe = os.path.join(root, 'python.exe' if os.name == 'nt' else 'python3.9')
+    exe = os.path.join(root, 'python.exe' if os.name == 'nt' else 'python%d.%d' % sys.version_info[:2])
     return exe, os.path.join(os.path.expanduser('~'), '.rhinocode', 'kit-hl', 'site')
 
 

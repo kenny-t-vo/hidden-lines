@@ -1,6 +1,6 @@
 #! python3
 # venv: hl
-# r: numpy==2.0.2
+# r: numpy
 """HL: the kit's hidden-line drawing of the open model (rhino/hidden_lines.py), run from the copy of the kit the
 plug-in carries (shared/hl-kit.zip, unpacked once a version), the drawing through the uv it carries for this platform
 (shared/uv-*), or on Rhino's own Python where it carries none"""

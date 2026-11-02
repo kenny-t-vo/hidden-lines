@@ -26,7 +26,7 @@ DESCRIPTION = ('HL draws the visible and hidden lines of a Rhino model, as Make2
                'each edge is, and adds the drawing to the model as layered curves. Type HL to run it. It also writes '
                'SVG, DXF and Illustrator files. It aims to be a better Make2D, not a finished drawing: faulty geometry '
                'draws as broken or doubled lines, which HL lists so you can fix the model, and some cleanup remains. '
-               'The first run downloads Python 3.12 and its packages, about 700 MB.')
+               'The first run downloads Python 3.12 and its packages, about 120 MB, which take up to 700 MB of disk.')
 BIN = Path('/Applications/Rhino 8.app/Contents/Resources/bin')
 
 

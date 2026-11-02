@@ -34,7 +34,7 @@ Or from a file, from the [releases](https://github.com/kenny-t-vo/hidden-lines/r
    - **On Windows,** Explorer does not know the file, so install it from Rhino 8: type `-PackageManager`, choose Install, then Browse, and pick the file.
 3. Quit Rhino and open it again.
 
-Then type `HL` in Rhino's command line: `HL` is the command, and HiddenLines only the package's name. The first time, it asks to download Python 3.12 and the packages the drawing runs on, about 700 MB. Click Yes. The download takes a minute or two and happens once. HL needs nothing else installed.
+Then type `HL` in Rhino's command line: `HL` is the command, and HiddenLines only the package's name. The first time, it asks to download Python 3.12 and the packages the drawing runs on, about 120 MB, which take up to 700 MB of disk. Click Yes. The download takes a minute or two and happens once. HL needs nothing else installed.
 
 ![HL asking to download what it runs on](docs/images/first-run-box.png)
 

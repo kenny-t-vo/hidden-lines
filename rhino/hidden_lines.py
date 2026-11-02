@@ -1859,11 +1859,12 @@ def setup(ask=True):
         if os.path.exists(mark):
             return True
         if ask and forms.MessageBox.Show(Rhino.UI.RhinoEtoApp.MainWindow, 'HL draws with Python 3.12 and a few '
-                                         'packages (numpy, shapely and others), which it downloads once, about 700 '
-                                         'MB, into its own folder. Download them now?', 'HL: first run',
+                                         'packages (numpy, shapely and others), which it downloads once, about 120 '
+                                         'MB, into its own folder, where they take up to 700 MB. Download them now?',
+                                         'HL: first run',
                                          forms.MessageBoxButtons.YesNo) != forms.DialogResult.Yes:
             return False
-        print('HL: downloading what the drawing needs, once (about 700 MB; a minute or two)')
+        print('HL: downloading what the drawing needs, once (about 120 MB; a minute or two)')
         Rhino.UI.StatusBar.SetMessagePane('HL: downloading Python and packages...')
         cmd, env = uv_command(kit_dir())
         code, text = wait_for(cmd + ['hidden-lines'], env)    # kit.py installs the packages, then exits on its usage
@@ -3429,7 +3430,7 @@ def drawn(doc, o, folder):
             say(text)
             import Eto.Forms as forms
             if forms.MessageBox.Show(Rhino.UI.RhinoEtoApp.MainWindow, 'The Python and packages HL downloaded look '
-                                     'damaged or incomplete. Download them again (about 700 MB)?', 'HL',
+                                     'damaged or incomplete. Download them again (about 120 MB)?', 'HL',
                                      forms.MessageBoxButtons.YesNo) == forms.DialogResult.Yes and redownload():
                 say('HL: downloaded again; drawing again')
                 code, text = kit_run(draw_args)

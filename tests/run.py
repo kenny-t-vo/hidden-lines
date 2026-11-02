@@ -114,6 +114,32 @@ def kit_dir_tests():
 kit_dir_tests()
 
 
+def older_rhino_tests():
+    """the calls Rhino 8.5 reported or RhinoCommon.xml dates after it, with stand-ins that take what each version's
+    StatusBar takes"""
+    export = load_hidden_lines()
+    calls = []
+
+    def before_8_6(*args):
+        if len(args) != 2:
+            raise TypeError('an integer is required in method Int32 UpdateProgressMeter(UInt32, Int32, Boolean)')
+        calls.append(args)
+
+    export.Rhino.UI = types.SimpleNamespace(StatusBar=types.SimpleNamespace(UpdateProgressMeter=before_8_6))
+    export.meter('HL: drawing', 11)
+    ok(calls == [(11, True)], 'hl: before Rhino 8.6, where the progress meter takes no label, it moves all the same')
+    export.Rhino.UI.StatusBar.UpdateProgressMeter = lambda *args: calls.append(args)
+    calls.clear()
+    export.meter('HL: drawing', 11)
+    ok(calls == [('HL: drawing', 11, True)], 'hl: from Rhino 8.6 the progress meter moves with its label')
+    text = Path(export.__file__).read_text(encoding='utf-8')
+    ok('bar.UpdateProgressMeter' not in text and '.DeleteUserString(' not in text,
+       'hl: no call to a form of UpdateProgressMeter or to DeleteUserString that Rhino 8.5 lacks')
+
+
+older_rhino_tests()
+
+
 def mirrored_block_tests():
     """geoms() on nested blocks placed mirrored, with stand-ins that orient as RhinoCommon 8.35 does: Transform by a
     mirror turns a brep's or a mesh's faces against its definition's, Flip turns them back"""

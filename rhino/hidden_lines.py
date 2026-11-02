@@ -2622,7 +2622,7 @@ def dialog(doc, vp):
         elif forms.MessageBox.Show(dlg, r[0], 'HL', forms.MessageBoxButtons.YesNo) != forms.DialogResult.Yes:
             return
         for i in held:
-            doc.Layers[i].DeleteUserString(hl.ROLE_KEY)
+            doc.Layers[i].SetUserString(hl.ROLE_KEY, None)   # Layer.DeleteUserString came in 8.9
         for e in entries:
             doc.Strings.Delete(SECTION, e)
         last.clear()                                   # so a Draw from this dialog keeps only its own choices
@@ -3310,6 +3310,15 @@ def draw(doc, o):
             shutil.rmtree(work, ignore_errors=True)
 
 
+def meter(label, position):
+    """the progress meter moved to position and given label; UpdateProgressMeter takes a label from Rhino 8.6, and
+    before that the meter keeps the label it was shown with"""
+    try:
+        Rhino.UI.StatusBar.UpdateProgressMeter(label, position, True)
+    except TypeError:
+        Rhino.UI.StatusBar.UpdateProgressMeter(position, True)
+
+
 def drawn(doc, o, folder):
     """the dialog's choices drawn into folder, with the request they make (request.json): the export in calls of two
     seconds (Esc stops it), kit.py hidden-lines and lint on what it wrote, the drawing added to the model, the files
@@ -3377,7 +3386,7 @@ def drawn(doc, o, folder):
                 s = r.split()[1]
                 if s != stage:
                     stage = s
-                    bar.UpdateProgressMeter('HL: %s' % s, STAGES.index(s) if s in STAGES else 0, True)
+                    meter('HL: %s' % s, STAGES.index(s) if s in STAGES else 0)
                 Rhino.RhinoApp.Wait()
                 if sc.escape_test(False):
                     sc.sticky.pop(KEY, None)
@@ -3412,7 +3421,7 @@ def drawn(doc, o, folder):
                 say('HL: not drawn, for memory')
                 write_log(keep)
                 return
-        bar.UpdateProgressMeter('HL: drawing', len(STAGES), True)
+        meter('HL: drawing', len(STAGES))
         tmp = os.path.join(tempfile.gettempdir(), 'hl-%s.json' % os.getpid())
         draw_args = ['hidden-lines', rpath] + (['--rhino', tmp] if o['add'] else [])
         code, text = kit_run(draw_args)
@@ -3437,7 +3446,7 @@ def drawn(doc, o, folder):
             fail(doc, nm, 'The drawing step failed (exit %d), after the model was read. %sIts last words:\n\n%s'
                  % (code, why, '\n'.join(text.splitlines()[-8:])), keep)
             return
-        bar.UpdateProgressMeter('HL: checking the drawing', len(STAGES) + 1, True)
+        meter('HL: checking the drawing', len(STAGES) + 1)
         code, text = kit_run(['lint', os.path.join(folder, nm + '.svg')])
         if code == STOPPED:
             text = 'lint stopped'

@@ -27,7 +27,9 @@ def ensure(cmd, argv):
     v = sys.version_info                           # shapely 2.1 needs 3.10; wheels lag the newest Pythons
     py = f'{v.major}.{v.minor}' if (3, 10) <= v < (3, 13) else META['python']
     pkgs = META['python_packages']
-    args = [uv, 'run', '--quiet', '--no-project', '--python', py]
+    # --no-build: wheels only, so an Intel Mac takes numba 0.62.1, the last with its wheels, where llvmlite 0.50's
+    # source build needs cmake
+    args = [uv, 'run', '--quiet', '--no-project', '--no-build', '--python', py]
     for p in pkgs:
         args += ['--with', p]
     os.environ['KIT_UV'] = '1'

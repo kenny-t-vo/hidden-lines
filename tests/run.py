@@ -3537,14 +3537,15 @@ ok(hl_so_ == ['', 'building cuts', 'building open cuts', 'building profiles 1.42
    and hl_st_ == ['HL::p::BEYOND::a 1-2 m', 'HL::p::CUT::x cuts', 'HL::p::CUT'],
    f'hl: a drawing\'s sublayers come into Rhino by group, class as the standard weights them and depth band near to '
    f'far, and a run again removes the layers it left empty, deepest first, and no other drawing\'s: {hl_so_} {hl_st_}')
-hl_dest_ = [hlc_.destination('plan', a_, 'HL', '/Users/a/Documents/m HL/plan', '/Users/a', s_)
+hl_home_, hl_there_ = os.path.join(os.sep, 'Users', 'a'), os.path.join('Documents', 'm HL', 'plan')
+hl_dest_ = [hlc_.destination('plan', a_, 'HL', os.path.join(hl_home_, hl_there_), hl_home_, s_)
             for a_, s_ in ((True, ()), (True, ('ai',)), (True, ('dxf', 'ai', 'svg')), (False, ('svg',)), (False, ()))]
 ok(hl_dest_ == ['Adds the drawing to this model under the layer HL::plan.',
-                'Adds the drawing to this model under the layer HL::plan, and saves an Illustrator file in '
-                '~/Documents/m HL/plan.',
+                f'Adds the drawing to this model under the layer HL::plan, and saves an Illustrator file in '
+                f'~{os.sep}{hl_there_}.',
                 'Adds the drawing to this model under the layer HL::plan, and saves an Illustrator file, an SVG and a '
-                'DXF in ~/Documents/m HL/plan.',
-                'Saves an SVG in ~/Documents/m HL/plan. Nothing is added to the model.',
+                f'DXF in ~{os.sep}{hl_there_}.',
+                f'Saves an SVG in ~{os.sep}{hl_there_}. Nothing is added to the model.',
                 'Nothing to make: tick Add the drawing to this model, or a file under Also save.'],
    f'hl: the dialog says where the drawing goes, the model alone unless files are ticked under Also save, and when it '
    f'would make nothing: {hl_dest_}')

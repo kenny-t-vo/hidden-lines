@@ -3776,6 +3776,14 @@ for rename_units_, rename_bands_, rename_own_ in [('m', [2.05, 4.92], False), ('
     if len(rename_bands_) == 3:
         ok(rename_labels_ == ['near (under 1 m)', 'middle 1 (1–2 m)', 'middle 2 (2–3 m)', 'far (past 3 m)'],
            'hidden-lines names: four bands number their middle leaves in order')
+rename_d_ = rename_scene_('m', [2.05, 4.92])
+rename_d_.subpaths = {k_: p_[:-1] + [('Gypsum/Drywall: "a"', p_[-1][1])] for k_, p_ in rename_d_.subpaths.items()}
+rename_d_.to_dxf(rename_dir_ / 'names.dxf')
+rename_x_ = rename_dxf_.readfile(rename_dir_ / 'names.dxf')
+rename_names_ = [l_.dxf.name for l_ in rename_x_.layers]
+ok(any(n_.endswith('Gypsum-Drywall- -a-') for n_ in rename_names_)
+   and all(e_.dxf.layer in rename_x_.layers for e_ in rename_x_.modelspace()),
+   f'hl: a layer name with characters DXF refuses writes, with dashes, and names that become one share a layer: {rename_names_}')
 rename_a_, rename_b_ = rename_scene_('m', [2.05, 4.92]), rename_scene_('m', [2.1, 5])
 ok(list(rename_a_.subids.values()) == list(rename_b_.subids.values())
    == ['OUTLINE-building-profiles-near', 'OUTLINE-building-profiles-middle', 'OUTLINE-building-profiles-far'],

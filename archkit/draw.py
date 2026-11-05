@@ -10,7 +10,7 @@
 Geometry is in model units, y up. Every visual value comes from the tokens: a layer names what it
 holds, its role says how it looks, and the weight follows the drawing's scale band.
 """
-import json, math
+import json, math, re
 from .project import load, place, PT_PER_MM, UNIT_MM
 
 
@@ -438,8 +438,12 @@ class Drawing:
             if not s['print']:
                 lay.dxf.plot = 0
             lay.description = s['title']
+        def leaf_name(lid, path_):                             # DXF refuses these in a layer's name; Rhino's allow them
+            return ' › '.join([lid] + [re.sub(r'[<>/\\":;?*|=`]', '-', p[0]) for p in path_])
         for (lid, sub), path_ in self.subpaths.items():
-            name = ' › '.join([lid] + [p[0] for p in path_])
+            name = leaf_name(lid, path_)
+            if name in doc.layers:                             # two names that differ only in those
+                continue
             lay = doc.layers.get(lid)
             leaf = doc.layers.add(name, dxfattribs={k: v for k, v in lay.dxf.all_existing_dxf_attribs().items()
                                                    if k not in ('handle', 'owner', 'name')})
@@ -452,7 +456,7 @@ class Drawing:
             fillonly = not s['stroke']
             for e in self.ents[lid]:
                 path_ = self.subpaths.get((lid, e.get('sub')))
-                a = {'layer': ' › '.join([lid] + [p[0] for p in path_]) if path_ else lid}
+                a = {'layer': leaf_name(lid, path_) if path_ else lid}
                 if e.get('sub') is not None:                   # a sublayer's weight, on its entities
                     mm = self.t.weight(self.subs[(lid, e['sub'])], self.scale) / PT_PER_MM * 100
                     a['lineweight'] = min(valid, key=lambda v: abs(v - mm))

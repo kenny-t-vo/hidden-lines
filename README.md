@@ -12,7 +12,7 @@ It aims to be a better Make2D, not a finished drawing. It can only draw what the
 
 The line weights follow from what each edge is: a building's outline, a step, a crease, a line on the ground. A section's cut is drawn as closed outlines, ready to hatch. HL adds the drawing to the model as curves on layers, and writes it as SVG, DXF and Illustrator files.
 
-It runs on Rhino 8 for Mac and Windows. The Mac package is built for Apple silicon and Intel, though Intel Macs have not been tested.
+It runs on Rhino 8 for Mac and Windows, and on the Rhino 9 beta for Mac; Rhino 9 on Windows has not been tried. The Mac package is built for Apple silicon and Intel, though Intel has only been run under Rosetta on an Apple silicon Mac.
 
 What it does not do:
 - draw text, dimensions or hatches;

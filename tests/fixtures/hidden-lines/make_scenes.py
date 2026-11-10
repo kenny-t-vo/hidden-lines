@@ -254,6 +254,11 @@ def scenes():
     for x in range(3):
         bad.append(('row', box(42 + 2 * x, 0, 0, 44 + 2 * x, 2, 2), {}))
     bad.append(('ground', plane([(-4, -6, 0), (52, -6, 0), (52, 8, 0), (-4, 8, 0)]), {}))
+    s['bad'] = dict(objects=bad, groups=[
+        dict(id='bad', layers=sorted({'hl::bad::' + p for p, _, _ in bad if p != 'ground'}), layer='DETAIL',
+             profile_layer='OUTLINE'),
+        dict(id='ground', layers=['hl::bad::ground'], layer='CONTEXT', ground=True)],
+        scale=300, view=dict(bearing=150, elevation=30, target=[24, 1, 1]))
     # curved: one form every 5 m along x, centred on y = 0
     cv = [('forms', G.Cylinder(G.Circle(G.Plane.WorldXY, 1.2), 3.0).ToBrep(True, True), {}),
           ('forms', G.Sphere(G.Point3d(5, 0, 1.2), 1.2).ToBrep(), {})]

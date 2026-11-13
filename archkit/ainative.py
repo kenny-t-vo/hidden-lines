@@ -271,7 +271,14 @@ def census(src, mark_len=3.0):
                 continue
             if ln.endswith(b') Ln'):
                 raw_name = re.sub(rb'\\([0-7]{3}|.)', lambda m: bytes([int(m[1], 8)]) if len(m[1]) == 3 else m[1], ln[1:-4])
-                name = raw_name[2:].decode('utf-16-be') if raw_name.startswith(b'\xfe\xff') else raw_name.decode('latin1')
+                if raw_name.startswith(b'\xfe\xff'):
+                    name = raw_name[2:].decode('utf-16-be')
+                else:
+                    # illustrator 30.6 writes the name in utf-8; bytes that aren't valid utf-8 are read as latin-1
+                    try:
+                        name = raw_name.decode('utf-8')
+                    except UnicodeDecodeError:
+                        name = raw_name.decode('latin1')
                 L = Layer(name, pending_layer, cur)
                 cur.kids.append(L)
                 cur = L
